@@ -94,7 +94,7 @@ Only the `render` image needs Typst and fonts. Locally, all profiles can run tog
 ```text
  1  Kafka delivers invoice.requested to the intake worker
  2  Check Redis for a done key, then check PostgreSQL
- 3  Load config and tax rates (Redis, falling back to PostgreSQL)
+ 3  Load config, entity and tax rates (Redis, falling back to PostgreSQL)
  4  Adapter validates and builds the payload
        invalid: dead-letter topic, no number used
  5  One transaction: invoice + counter + number + payload + outbox
@@ -117,7 +117,7 @@ Only the `render` image needs Typst and fonts. Locally, all profiles can run tog
 | Internal queue | Kafka `invoice.render` | Render scales separately and has backpressure | Redis queue: not durable enough. In-process: no separate scaling |
 | Reliable publish | Transactional outbox | Commit and event succeed together | Publish after commit: a crash loses the event |
 | Outbox transport | Polling first, then Debezium CDC | Polling is quick to build. CDC removes polling, and the comparison gets measured | CDC only: no baseline. Polling only: delay and bloat at scale |
-| Numbering | Counter row per BU, region and financial year | Transactional, with no rollback gaps | `SEQUENCE`: gaps. Redis `INCR`: can reissue after failure. Blocks: gaps and disorder |
+| Numbering | Counter row per entity, BU and financial year | Transactional, with no rollback gaps | `SEQUENCE`: gaps. Redis `INCR`: can reissue after failure. Blocks: gaps and disorder |
 | Dedupe | Unique key in PostgreSQL, Redis as a fast path | Correct even if Redis is empty | Redis only: not safe |
 | Render dedupe | Redis lease plus guarded update | Saves CPU, and the database remains correct without Redis | Database lock during render: holds a connection too long |
 | Post-number failure | Recovery cron reads PostgreSQL | The invoice can't be dropped, and the cron still works if a message is lost | DLQ: invoices could be forgotten |
@@ -131,7 +131,7 @@ Redis may hold anything that can be rebuilt from PostgreSQL, and nothing that on
 
 | Allowed | Not allowed |
 |---|---|
-| Adapter config and tax rate cache | Sequence numbers |
+| Adapter config, entity and tax rate cache | Sequence numbers |
 | Done markers for dedupe | Invoice status as the truth |
 | Render leases | The render queue |
 
@@ -203,10 +203,10 @@ Docker Compose runs Kafka, PostgreSQL, Redis, `fake-gcs-server`, Mailpit, Promet
 
 | Phase | Outcome |
 |---|---|
-| 1 | Skeleton, schema, one BU through numbering |
+| 1 | Skeleton, schema, `subscriptions` through numbering |
 | 2 | Polling outbox, render, storage, notification |
 | 3 | Recovery cron, DLQ replay, failure tests |
-| 4 | Second BU |
+| 4 | `enterprise`, then the remaining BUs |
 | 5 | Load test with polling, then CDC and compare |
 | 6 | Multiple series test |
 | 7 | Archive and retrieval |

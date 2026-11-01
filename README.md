@@ -9,6 +9,7 @@ This repository holds the project base. Application code isn't written yet.
 - [PRD](docs/PRD.md)
 - [HLD](docs/HLD.md)
 - [LLD](docs/LLD.md)
+- [Invoice Superset](docs/INVOICE_SUPERSET.md)
 - [Code Conventions](docs/CONVENTIONS.md)
 
 ## CI

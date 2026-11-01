@@ -8,7 +8,7 @@
 
 ## 1. Summary
 
-InvoiceKit is an event-driven service that generates compliant invoices for multiple business units (BUs) from one platform. A BU publishes an event, and InvoiceKit validates it, calculates tax, assigns a unique sequence number, renders a PDF, stores it, notifies the recipient, and later archives it at lower cost.
+InvoiceKit is an event-driven service that generates compliant invoices for a SaaS company's business units (BUs) from one platform. The BUs are `subscriptions`, `usage`, `enterprise`, `services`, `marketplace` and `international`. A BU publishes an event, and InvoiceKit validates it, calculates tax, assigns a unique sequence number, renders a PDF, stores it, notifies the recipient, and later archives it at lower cost.
 
 A new BU joins by adding an adapter, its configuration and a template. The core flow stays unchanged.
 
@@ -35,6 +35,8 @@ Each BU has its own invoice fields, tax handling and layout. Building invoice ge
 
 ## 4. Non-goals
 
+- Billing outside SaaS, including goods and e-way bills.
+- Calculating subscriptions, proration or usage. BU systems own billing logic.
 - A UI for designing templates.
 - Payment collection, ledgers or accounting.
 - Direct submission to government e-invoicing portals.
@@ -77,7 +79,7 @@ Each BU has its own invoice fields, tax handling and layout. Building invoice ge
 | ID | Requirement |
 |---|---|
 | FR4 | Route each event to its adapter by BU key |
-| FR5 | Maintain a superset of supported invoice fields, with each BU allowing a subset |
+| FR5 | Maintain a superset of supported invoice fields, defined in [Invoice Superset](INVOICE_SUPERSET.md), with each BU allowing a subset of the optional fields |
 | FR6 | Reject a payload that contains fields the BU doesn't allow |
 | FR7 | Validate adapter config at startup and fail fast if it's invalid |
 | FR8 | Calculate tax from shared, versioned, date-effective rates |
@@ -88,7 +90,7 @@ Each BU has its own invoice fields, tax handling and layout. Building invoice ge
 | ID | Requirement |
 |---|---|
 | FR10 | Assign a number only after the payload passes validation |
-| FR11 | Keep a separate series per BU, region and financial year |
+| FR11 | Keep a separate series per entity, BU and financial year |
 | FR12 | Never leave a gap caused by a rollback, duplicate or crash |
 | FR13 | Save the number and final payload together in one transaction |
 | FR14 | Never reuse or discard a committed number |
@@ -161,17 +163,17 @@ Each BU has its own invoice fields, tax handling and layout. Building invoice ge
 
 | Release | Scope |
 |---|---|
-| M1 | One BU end to end, numbering, render, local storage, notification |
+| M1 | `subscriptions` end to end, numbering, render, local storage, notification |
 | M2 | Recovery cron, dead-letter replay, failure tests |
-| M3 | Second BU, which proves the contract |
+| M3 | `enterprise`, which proves the contract with a very different template |
 | M4 | Load test with polling, then Debezium CDC and comparison |
-| M5 | Multiple series load test, archive and retrieval |
+| M5 | `usage`, `services`, `marketplace` and multiple series load test |
+| M6 | `international`, archive and retrieval |
 
 ## 11. Assumptions
 
-- Multiple series per BU and region are allowed by the target compliance rules.
 - Each BU sends a stable, unique `source_event_id`.
-- Each event contains enough data to determine the region and invoice date.
+- Each event contains its entity, place of supply and invoice date.
 - A 50KB average PDF is used for planning until real templates exist.
 
 ## 12. Risks
@@ -187,7 +189,6 @@ Each BU has its own invoice fields, tax handling and layout. Building invoice ge
 
 ## 13. Open questions
 
-- What are the exact number format and length limits per country?
 - What is the legal retention period?
 - What are the formal rules for cancelling an invoice?
 - What does the final archive bundling and retrieval design look like? That design will be merged into the LLD.

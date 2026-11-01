@@ -82,22 +82,7 @@ Retention is 7 days, with 14 days for the DLQ. Replication factor is 3 in the cl
 
 ### `invoice.requested`
 
-```json
-{
-  "schemaVersion": 1,
-  "bu": "logistics",
-  "sourceEventId": "evt-101",
-  "region": "MH",
-  "invoiceDate": "2026-11-01",
-  "currency": "INR",
-  "buyer": { "name": "Acme Traders", "taxId": "27ABCDE1234F1Z5" },
-  "seller": { "name": "Example Logistics", "taxId": "27AAAAA0000A1Z5" },
-  "lineItems": [
-    { "description": "Freight", "taxCode": "9965", "quantity": 1, "unitPrice": "1000.00" }
-  ],
-  "attributes": { "shipmentId": "SHP-778" }
-}
-```
+The full event, payload and field rules are in [Invoice Superset](INVOICE_SUPERSET.md).
 
 ### `invoice.render`
 
@@ -105,9 +90,9 @@ Retention is 7 days, with 14 days for the DLQ. Replication factor is 3 in the cl
 {
   "schemaVersion": 1,
   "invoiceId": "018f3c1e-7b0a-7d3e-9e0a-2f4c9a6d1b11",
-  "bu": "logistics",
-  "sourceEventId": "evt-101",
-  "invoiceNumber": "LGMH2627000142",
+  "bu": "subscriptions",
+  "sourceEventId": "sub-482:2026-11",
+  "invoiceNumber": "SUBMH2627000142",
   "invoiceDate": "2026-11-01",
   "payload": { }
 }
@@ -123,9 +108,9 @@ Shortcut: inline payloads fit the 1MB Kafka default. Upgrade to a database refer
 {
   "schemaVersion": 1,
   "invoiceId": "018f3c1e-7b0a-7d3e-9e0a-2f4c9a6d1b11",
-  "bu": "logistics",
-  "invoiceNumber": "LGMH2627000142",
-  "uri": "gs://invoices/logistics/2026/11/01/018f3c1e-7b0a-7d3e-9e0a-2f4c9a6d1b11.pdf",
+  "bu": "subscriptions",
+  "invoiceNumber": "SUBMH2627000142",
+  "uri": "gs://invoices/subscriptions/2026/11/01/018f3c1e-7b0a-7d3e-9e0a-2f4c9a6d1b11.pdf",
   "checksum": "crc32c:ab12cd34"
 }
 ```
@@ -139,19 +124,70 @@ Shortcut: inline payloads fit the 1MB Kafka default. Upgrade to a database refer
 PostgreSQL 16+ with Flyway. All timestamps are `timestamptz`. Money is `numeric(18,2)`, never floating point.
 
 ```sql
+CREATE TABLE gst_state (
+  state_code  char(2) PRIMARY KEY,
+  state_name  text NOT NULL
+);
+
+CREATE TABLE entity (
+  entity_code                text PRIMARY KEY,
+  legal_name                 text NOT NULL,
+  trade_name                 text,
+  gstin                      char(15) NOT NULL UNIQUE,
+  state_code                 char(2) NOT NULL REFERENCES gst_state (state_code),
+  address                    text NOT NULL,
+  registered_office_address  text NOT NULL,
+  cin                        text NOT NULL,
+  pan                        text,
+  lut_number                 text,
+  authorised_signatory       text,
+  bank_details               jsonb,
+  contact_email              text,
+  contact_phone              text,
+  terms                      text,
+  active                     boolean NOT NULL DEFAULT true
+);
+
+CREATE TABLE bu_entity (
+  bu           text NOT NULL,
+  entity_code  text NOT NULL REFERENCES entity (entity_code),
+  PRIMARY KEY (bu, entity_code)
+);
+
+CREATE TABLE tax_code (
+  tax_code        text NOT NULL,
+  hsn_code        text NOT NULL,
+  gst_rate        numeric(5, 2) NOT NULL,
+  cess_rate       numeric(5, 2) NOT NULL DEFAULT 0,
+  effective_from  date NOT NULL,
+  effective_to    date,
+  PRIMARY KEY (tax_code, effective_from)
+);
+
+CREATE TABLE adapter_config (
+  bu              text NOT NULL,
+  version         int NOT NULL,
+  allowed_fields  jsonb NOT NULL,
+  number_format   text NOT NULL,
+  active          boolean NOT NULL DEFAULT false,
+  PRIMARY KEY (bu, version)
+);
+
+CREATE UNIQUE INDEX adapter_config_one_active_idx ON adapter_config (bu) WHERE active;
+
 CREATE TABLE invoice (
   id                uuid PRIMARY KEY,
   bu                text NOT NULL,
-  region            text NOT NULL,
+  entity_code       text NOT NULL REFERENCES entity (entity_code),
   source_event_id   text NOT NULL,
   financial_year    text NOT NULL,
   invoice_date      date NOT NULL,
-  invoice_number    text,
+  invoice_number    varchar(16),
   sequence_no       bigint,
   contract_version  int NOT NULL,
   payload           jsonb NOT NULL,
   status            text NOT NULL CHECK (status IN
-                    ('NUMBERED','STORED','DELIVERED','FAILED','CANCELLED')),
+                    ('NUMBERED', 'STORED', 'DELIVERED', 'FAILED', 'CANCELLED')),
   uri               text,
   checksum          text,
   attempts          int NOT NULL DEFAULT 0,
@@ -159,7 +195,8 @@ CREATE TABLE invoice (
   created_at        timestamptz NOT NULL DEFAULT now(),
   updated_at        timestamptz NOT NULL DEFAULT now(),
   UNIQUE (bu, source_event_id),
-  UNIQUE (bu, region, financial_year, sequence_no)
+  UNIQUE (entity_code, bu, financial_year, sequence_no),
+  UNIQUE (entity_code, financial_year, invoice_number)
 );
 
 CREATE INDEX invoice_stuck_numbered_idx ON invoice (updated_at)
@@ -168,53 +205,33 @@ CREATE INDEX invoice_stuck_stored_idx ON invoice (updated_at)
   WHERE status = 'STORED';
 
 CREATE TABLE invoice_counter (
+  entity_code     text NOT NULL REFERENCES entity (entity_code),
   bu              text NOT NULL,
-  region          text NOT NULL,
   financial_year  text NOT NULL,
   last_no         bigint NOT NULL,
-  PRIMARY KEY (bu, region, financial_year)
+  PRIMARY KEY (entity_code, bu, financial_year)
 );
 
 CREATE TABLE outbox (
-  id             uuid PRIMARY KEY,
-  invoice_id     uuid NOT NULL REFERENCES invoice (id),
-  topic          text NOT NULL,
-  message_key    text NOT NULL,
-  body           jsonb NOT NULL,
-  created_at     timestamptz NOT NULL DEFAULT now(),
-  sent_at        timestamptz
+  id           uuid PRIMARY KEY,
+  invoice_id   uuid NOT NULL REFERENCES invoice (id),
+  topic        text NOT NULL,
+  message_key  text NOT NULL,
+  body         jsonb NOT NULL,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  sent_at      timestamptz
 );
 
 CREATE INDEX outbox_unsent_idx ON outbox (created_at) WHERE sent_at IS NULL;
 
-CREATE TABLE adapter_config (
-  bu               text NOT NULL,
-  version          int NOT NULL,
-  allowed_fields   jsonb NOT NULL,
-  number_format    text NOT NULL,
-  active           boolean NOT NULL DEFAULT false,
-  PRIMARY KEY (bu, version)
-);
-
-CREATE UNIQUE INDEX adapter_config_one_active_idx ON adapter_config (bu) WHERE active;
-
-CREATE TABLE tax_rate (
-  tax_code        text NOT NULL,
-  region          text NOT NULL,
-  rate            numeric(6,3) NOT NULL,
-  effective_from  date NOT NULL,
-  effective_to    date,
-  PRIMARY KEY (tax_code, region, effective_from)
-);
-
 CREATE TABLE invoice_audit (
-  id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  invoice_id  uuid NOT NULL REFERENCES invoice (id),
-  from_status text,
-  to_status   text NOT NULL,
-  actor       text NOT NULL,
-  reason      text,
-  created_at  timestamptz NOT NULL DEFAULT now()
+  id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  invoice_id   uuid NOT NULL REFERENCES invoice (id),
+  from_status  text,
+  to_status    text NOT NULL,
+  actor        text NOT NULL,
+  reason       text,
+  created_at   timestamptz NOT NULL DEFAULT now()
 );
 ```
 
@@ -259,11 +276,12 @@ public interface InvoiceAdapter {
 
 ```java
 public enum InvoiceField {
-    BUYER, SELLER, LINE_ITEMS, TAX_BREAKUP, SHIPMENT_ID, VEHICLE_NUMBER, STORE_CODE, DISCOUNTS
+    DUE_DATE, PAYMENT_TERMS, PO_NUMBER, SUBSCRIPTION_ID, PLAN_NAME, BILLING_CYCLE,
+    COUPON_CODE, USAGE_SUMMARY, CONTRACT_REF, MILESTONE, ADDON_ID, DEVELOPER_ID
 }
 ```
 
-`allowed_fields` holds the BU's subset. The example field names are placeholders until real BUs are defined.
+`allowed_fields` holds the BU's subset of these optional fields. Required fields in [Invoice Superset](INVOICE_SUPERSET.md) apply to every BU.
 
 `AdapterRegistry` collects all `InvoiceAdapter` beans into a map by BU key.
 
@@ -280,8 +298,8 @@ Runtime rules:
 - Reject any payload field outside `allowed_fields`.
 - Tax amounts use `BigDecimal`, with rounding defined in shared code.
 - Adapters do no I/O. Config and rates are passed in.
-- Adapters use the shared `TaxCalculator`, so tax logic isn't duplicated.
-- Tax rates are chosen by `invoiceDate`, not by the current date.
+- Adapters use the shared `TaxCalculator`, which applies the rounding rule in [Invoice Superset](INVOICE_SUPERSET.md).
+- Tax rates are chosen by `taxCode` and `invoiceDate`, not by the current date.
 
 ## 6. Intake flow
 
@@ -293,7 +311,7 @@ void onInvoiceRequested(ConsumerRecord<String, byte[]> record, Acknowledgment ac
 2. Check Redis key `invoice:<bu>:<source_event_id>:done`. On a hit, ack and stop.
 3. Find the invoice by `(bu, source_event_id)`. If it exists, set the done key where the status allows it, ack and stop. The outbox and cron own any remaining work.
 4. Find the adapter. An unknown BU goes to the DLQ with `UNKNOWN_BU`.
-5. Load config and rates through the cache.
+5. Load config, entity, state and tax rates through the cache. A `bu_entity` miss goes to the DLQ with `ENTITY_NOT_ALLOWED`.
 6. Run the adapter. Validation failures go to the DLQ with `VALIDATION_FAILED`.
 7. Run the numbering transaction.
 8. Ack.
@@ -302,7 +320,7 @@ void onInvoiceRequested(ConsumerRecord<String, byte[]> record, Acknowledgment ac
 
 | Type | Examples | Action |
 |---|---|---|
-| Permanent | Bad schema, unknown BU, disallowed field, missing tax rate | DLQ, then ack |
+| Permanent | Bad schema, unknown BU, disallowed entity or field, unknown state, missing tax rate | DLQ, then ack |
 | Transient | PostgreSQL or Kafka unavailable, timeouts | Retry with backoff, without ack |
 
 The listener retries transient errors with exponential backoff, from 200ms up to 30s. It pauses the partition during long outages, so a dependency failure can't flood the DLQ.
@@ -314,20 +332,21 @@ Keep this transaction short, with no network calls other than PostgreSQL.
 ```sql
 BEGIN;
 
-INSERT INTO invoice (id, bu, region, source_event_id, financial_year,
+INSERT INTO invoice (id, bu, entity_code, source_event_id, financial_year,
                      invoice_date, contract_version, payload, status)
-VALUES (:id, :bu, :region, :eventId, :fy, :date, :version, :payload, 'NUMBERED')
+VALUES (:id, :bu, :entityCode, :eventId, :fy, :date, :version, :payload, 'NUMBERED')
 ON CONFLICT (bu, source_event_id) DO NOTHING;
 -- 0 rows: ROLLBACK, ack, stop. Another worker won.
 
-INSERT INTO invoice_counter (bu, region, financial_year, last_no)
-VALUES (:bu, :region, :fy, 1)
-ON CONFLICT (bu, region, financial_year)
+INSERT INTO invoice_counter (entity_code, bu, financial_year, last_no)
+VALUES (:entityCode, :bu, :fy, 1)
+ON CONFLICT (entity_code, bu, financial_year)
 DO UPDATE SET last_no = invoice_counter.last_no + 1
 RETURNING last_no;
 
 UPDATE invoice
-SET sequence_no = :lastNo, invoice_number = :formatted
+SET sequence_no = :lastNo, invoice_number = :formatted,
+    payload = jsonb_set(payload, '{invoiceNumber}', to_jsonb(:formatted::text))
 WHERE id = :id;
 
 INSERT INTO invoice_audit (invoice_id, to_status, actor)
@@ -348,11 +367,12 @@ Why this order is safe:
 
 ### Series and format
 
-- `SeriesKey` is `bu + region + financial_year`.
+- `SeriesKey` is `entity_code + bu + financial_year`.
+- Each BU needs its own prefix. `UNIQUE (entity_code, financial_year, invoice_number)` protects uniqueness under a shared GSTIN.
 - `financial_year` comes from `invoiceDate` using the rules for the region, and is saved on the invoice. Example: `2026-27`.
-- `region` comes from the event, and is saved so a retry can't change series.
-- `number_format` is per BU. Example: `LG{region}{fy}{seq:6}` gives `LGMH2627000142`.
-- Format length limits are to be confirmed per country.
+- `entity_code` comes from the event, and is saved so a retry can't change series.
+- `number_format` is per BU. Example: `SUBMH{fy}{seq:6}` gives `SUBMH2627000142`.
+- Numbers are at most 16 characters, using only letters, digits, `-` and `/`. Startup validation rejects a format that can exceed this.
 
 ### Why not other allocators
 
@@ -516,7 +536,8 @@ The 5 minute threshold must stay above the 120 second lease and the 60 second re
 | Key | Value | TTL | If missing |
 |---|---|---|---|
 | `invoicekit:config:<bu>` | Active config | 5 min | Read PostgreSQL |
-| `invoicekit:tax:<region>:<date>` | Rates for the date | 1 hour | Read PostgreSQL |
+| `invoicekit:entity:<entity_code>` | Entity details | 5 min | Read PostgreSQL |
+| `invoicekit:tax:<tax_code>:<date>` | Rate for the date | 1 hour | Read PostgreSQL |
 | `invoice:<bu>:<source_event_id>:done` | `1` | 24 hours | Read PostgreSQL |
 | `invoice:<bu>:<source_event_id>:render` | Worker ID | 120 sec | Render anyway |
 
@@ -542,8 +563,8 @@ Example response:
 ```json
 {
   "id": "018f3c1e-7b0a-7d3e-9e0a-2f4c9a6d1b11",
-  "bu": "logistics",
-  "invoiceNumber": "LGMH2627000142",
+  "bu": "subscriptions",
+  "invoiceNumber": "SUBMH2627000142",
   "status": "STORED",
   "invoiceDate": "2026-11-01",
   "createdAt": "2026-11-01T10:15:30Z"
@@ -644,14 +665,15 @@ GitHub Actions runs `./gradlew build` on every push to `main` and every pull req
 4. Storage, finish transaction, notification.
 5. Recovery cron, DLQ replay, operations APIs.
 6. Metrics and failure tests.
-7. Second BU.
+7. Second BU, `enterprise`, then `usage`, `services` and `marketplace`.
+   `international` follows the core BUs.
 8. Load test, then Debezium, then compare.
 9. Multiple series test.
 10. Archive and retrieval.
 
 ## 19. Open items
 
-- Confirm number format, length limits and financial year rules per country.
+- Get the invoice superset reviewed by a CA.
 - Confirm the cancellation process and retention period.
 - Merge the bundling and retrieval design.
 - Define API authentication.
