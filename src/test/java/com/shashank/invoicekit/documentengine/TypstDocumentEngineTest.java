@@ -82,7 +82,7 @@ class TypstDocumentEngineTest {
 
   @Test
   void treatsAResponseWithNoBodyAsRetryable() {
-    respondWith(200, "");
+    respondWith(204, "");
 
     assertThatThrownBy(() -> engine().render(REQUEST))
         .isInstanceOf(RenderUnavailableException.class);

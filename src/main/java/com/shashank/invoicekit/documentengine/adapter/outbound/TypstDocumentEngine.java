@@ -7,6 +7,7 @@ import com.shashank.invoicekit.documentengine.domain.exception.RenderRejectedExc
 import com.shashank.invoicekit.documentengine.domain.exception.RenderUnavailableException;
 import java.nio.charset.StandardCharsets;
 import org.springframework.http.MediaType;
+import org.springframework.util.ObjectUtils;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -49,7 +50,7 @@ public class TypstDocumentEngine implements DocumentEngine {
           error);
     }
 
-    if (pdf == null || pdf.length == 0) {
+    if (ObjectUtils.isEmpty(pdf)) {
       throw new RenderUnavailableException(
           "Typst renderer returned an empty document for business unit %s"
               .formatted(request.businessUnit()));
