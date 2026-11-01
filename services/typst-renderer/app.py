@@ -4,12 +4,12 @@ The Java render worker sends the saved invoice payload here, and this service
 returns the finished PDF. It knows nothing about Kafka, the database or storage.
 
 Endpoints:
-    POST /render/<bu>   Body is the invoice payload as JSON. Returns the PDF.
-    GET  /health        Returns 200 when the service is up.
+    POST /render/<business_unit>   Body is the invoice payload as JSON. Returns the PDF.
+    GET  /health                   Returns 200 when the service is up.
 
 Error responses:
     400   The body is not valid JSON.
-    404   There is no template for this BU.
+    404   There is no template for this business unit.
     422   Typst failed to compile the invoice, or raised a warning.
 """
 
@@ -55,7 +55,7 @@ def load_compilers():
 COMPILERS = load_compilers()
 
 
-def render(bu, payload):
+def render(business_unit, payload):
     """Compiles one invoice and returns the PDF bytes.
 
     The payload is passed in as plain data, so a customer name or any other
@@ -65,7 +65,7 @@ def render(bu, payload):
     font and then quietly uses a different one.
     """
     try:
-        pdf, warnings = COMPILERS[bu].compile_with_warnings(sys_inputs={"payload": payload})
+        pdf, warnings = COMPILERS[business_unit].compile_with_warnings(sys_inputs={"payload": payload})
     except typst.TypstError as error:
         raise RenderError(error.diagnostic) from error
     if warnings:
@@ -84,10 +84,10 @@ def app(environ, start_response):
     if method != "POST" or not path.startswith("/render/"):
         return respond(start_response, "404 Not Found", b"Not found", "text/plain")
 
-    # The BU is only looked up in COMPILERS, so a request can't choose a file path.
-    bu = path.removeprefix("/render/")
-    if bu not in COMPILERS:
-        return respond(start_response, "404 Not Found", f"Unknown template: {bu}".encode(), "text/plain")
+    # The business unit is only looked up in COMPILERS, so a request can't choose a file path.
+    business_unit = path.removeprefix("/render/")
+    if business_unit not in COMPILERS:
+        return respond(start_response, "404 Not Found", f"Unknown template: {business_unit}".encode(), "text/plain")
 
     body = environ["wsgi.input"].read(int(environ.get("CONTENT_LENGTH") or 0))
     try:
@@ -97,7 +97,7 @@ def app(environ, start_response):
         return respond(start_response, "400 Bad Request", b"Invalid JSON", "text/plain")
 
     try:
-        return respond(start_response, "200 OK", render(bu, payload), "application/pdf")
+        return respond(start_response, "200 OK", render(business_unit, payload), "application/pdf")
     except RenderError as error:
         return respond(start_response, "422 Unprocessable Entity", str(error).encode(), "text/plain")
 

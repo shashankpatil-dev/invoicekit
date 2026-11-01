@@ -452,13 +452,13 @@ public interface DocumentEngine {
     RenderedDocument render(RenderRequest request);
 }
 
-public record RenderRequest(String bu, String payloadJson) {}
+public record RenderRequest(String businessUnit, String payloadJson) {}
 public record RenderedDocument(byte[] pdf) {}
 ```
 
 `payloadJson` stays a string, so the domain has no Jackson dependency.
 
-`TypstDocumentEngine` calls the Typst renderer over HTTP, with a client timeout below the service's 30 second worker timeout.
+`TypstDocumentEngine` calls the Typst renderer over HTTP. Its 25 second timeout stays below the service's 30 second worker limit, so the client fails first and the render can be retried.
 
 | Response | Exception | Retried |
 |---|---|---|
@@ -472,7 +472,7 @@ public record RenderedDocument(byte[] pdf) {}
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /render/<bu>` | Renders the JSON body to a PDF |
+| `POST /render/<businessUnit>` | Renders the JSON body to a PDF |
 | `GET /health` | Health check |
 
 | Status | Meaning |
@@ -485,7 +485,7 @@ public record RenderedDocument(byte[] pdf) {}
 Rules:
 
 - **Warm compilers:** one compiler per template is built at startup and reused.
-- **Templates:** the image build copies `resources/adaption/`, so `<bu>` is looked up in a fixed list and never builds a file path.
+- **Templates:** the image build copies `resources/adaption/`, so `<businessUnit>` is looked up in a fixed list and never builds a file path.
 - **Data only:** the payload arrives through `sys.inputs.payload`, and templates read it with `json()`, so its values can't run as template code.
 - **Fonts:** Source Sans 3 is bundled in the image, and system fonts are ignored.
 - **Warnings fail:** Typst only warns about a missing font, so any warning fails the render.
@@ -637,7 +637,8 @@ invoicekit:
     poll-interval: 100ms
     batch-size: 500
   render:
-    timeout: 30s
+    url: http://localhost:3002
+    timeout: 25s
     max-concurrency: 4
     lease-ttl: 120s
   recovery:
@@ -720,3 +721,5 @@ GitHub Actions runs `./gradlew build` on every push to `main` and every pull req
 - Define API authentication.
 - Test `ifGenerationMatch` on `fake-gcs-server`.
 - Set partition counts and render concurrency from load tests.
+- Rename `bu` to `businessUnit` in the schema, JSON contract and docs.
+- Measure payload cost under load, including the String to bytes copy in `TypstDocumentEngine`. Consider Protobuf for Kafka messages only if the numbers justify it. PostgreSQL `jsonb` and Typst both still need JSON.

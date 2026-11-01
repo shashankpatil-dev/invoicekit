@@ -47,7 +47,8 @@ invoicekit:
     poll-interval: 100ms
     batch-size: 500
   render:
-    timeout: 30s
+    url: ${TYPST_RENDERER_URL:http://localhost:3002}
+    timeout: 25s
     max-concurrency: 4
     lease-ttl: 120s
   recovery:
