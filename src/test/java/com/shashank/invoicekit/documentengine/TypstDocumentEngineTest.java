@@ -81,8 +81,21 @@ class TypstDocumentEngineTest {
   }
 
   @Test
-  void treatsAnEmptyDocumentAsRetryable() {
+  void treatsAResponseWithNoBodyAsRetryable() {
     respondWith(200, "");
+
+    assertThatThrownBy(() -> engine().render(REQUEST))
+        .isInstanceOf(RenderUnavailableException.class);
+  }
+
+  @Test
+  void treatsAnEmptyStreamedDocumentAsRetryable() {
+    server.createContext(
+        "/",
+        exchange -> {
+          exchange.sendResponseHeaders(200, 0);
+          exchange.close();
+        });
 
     assertThatThrownBy(() -> engine().render(REQUEST))
         .isInstanceOf(RenderUnavailableException.class);

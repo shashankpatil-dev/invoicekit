@@ -1,5 +1,6 @@
 plugins {
   java
+  jacoco
   id("org.springframework.boot") version "3.5.6"
   id("io.spring.dependency-management") version "1.1.7"
   id("com.diffplug.spotless") version "7.2.1"
@@ -15,6 +16,9 @@ java {
 repositories {
   mavenCentral()
 }
+
+// Spring Boot's managed version is too old for Docker Engine 29.
+extra["testcontainers.version"] = "1.21.4"
 
 dependencies {
   implementation("org.springframework.boot:spring-boot-starter-web")
@@ -36,6 +40,7 @@ dependencies {
   testImplementation("org.testcontainers:postgresql")
   testImplementation("org.testcontainers:kafka")
   testImplementation("com.tngtech.archunit:archunit-junit5:1.4.1")
+  testImplementation("org.apache.pdfbox:pdfbox:3.0.5")
   testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
@@ -51,4 +56,34 @@ spotless {
 
 tasks.test {
   useJUnitPlatform()
+  finalizedBy(tasks.jacocoTestReport)
+}
+
+val coveredClasses = "com/shashank/invoicekit/documentengine/**"
+
+tasks.jacocoTestReport {
+  dependsOn(tasks.test)
+  classDirectories.setFrom(sourceSets.main.get().output.asFileTree.matching { include(coveredClasses) })
+}
+
+tasks.jacocoTestCoverageVerification {
+  classDirectories.setFrom(sourceSets.main.get().output.asFileTree.matching { include(coveredClasses) })
+  violationRules {
+    rule {
+      limit {
+        counter = "INSTRUCTION"
+        minimum = "0.90".toBigDecimal()
+      }
+    }
+    rule {
+      limit {
+        counter = "BRANCH"
+        minimum = "0.90".toBigDecimal()
+      }
+    }
+  }
+}
+
+tasks.check {
+  dependsOn(tasks.jacocoTestCoverageVerification)
 }

@@ -676,7 +676,7 @@ The `step` label values are `adapter`, `numbering`, `publish`, `render`, `upload
 | Unit | Adapters, tax, number formats, financial year, status rules |
 | Architecture | ArchUnit module and layer rules |
 | Integration | Testcontainers for Kafka, PostgreSQL and Redis, plus `fake-gcs-server` |
-| Contract | Event schemas, OpenAPI |
+| Contract | Event schemas, OpenAPI, and real PDFs from the Typst renderer image, read back with PDFBox |
 | Concurrency | Parallel numbering, checked for no duplicates or gaps |
 | Load | Sustained 20 rps, 100 rps burst, single hot series |
 

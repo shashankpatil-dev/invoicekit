@@ -14,7 +14,7 @@ This repository holds the project base. Application code isn't written yet.
 
 ## CI
 
-GitHub Actions runs `./gradlew build` on every push to `main` and every pull request. Run the same command locally before pushing.
+GitHub Actions runs `./gradlew build` on every push to `main` and every pull request. Run the same command locally before pushing. The tests need Docker.
 
 ## Local infrastructure
 

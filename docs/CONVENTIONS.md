@@ -28,6 +28,8 @@ Spotless applies Google Java Format.
 
 Every push to `main` and every pull request runs `./gradlew build`, which checks formatting, compiles the code and runs all tests. A failing run must be fixed before merging.
 
+JaCoCo fails the build if `documentengine` drops below 90% instruction or branch coverage. New modules join this check as they are built. The report is at `build/reports/jacoco/test/html/index.html`.
+
 ## Documentation
 
 Any change to behaviour, design, configuration or local setup updates the matching file in `docs/` or the README in the same commit.
