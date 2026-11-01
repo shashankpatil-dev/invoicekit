@@ -38,6 +38,19 @@ CREATE TABLE tax_code (
   PRIMARY KEY (tax_code, effective_from)
 );
 
+CREATE TABLE declaration (
+  code                  text NOT NULL,
+  body                  text NOT NULL,
+  bu                    text,
+  supply_category       text CHECK (supply_category IN ('DOMESTIC', 'EXPORT_LUT')),
+  reverse_charge        boolean,
+  recipient_registered  boolean,
+  sort_order            int NOT NULL,
+  effective_from        date NOT NULL,
+  effective_to          date,
+  PRIMARY KEY (code, effective_from)
+);
+
 CREATE TABLE adapter_config (
   bu              text NOT NULL,
   version         int NOT NULL,

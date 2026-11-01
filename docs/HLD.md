@@ -69,7 +69,8 @@ After the commit stage, an invoice must be completed. Every later failure is a d
 | BU adapter | Validate allowed fields, calculate tax, build the payload | In-process, stateless |
 | Numbering | Allocate the next number in a series | Number of series |
 | Outbox publisher | Move committed events to Kafka | Polling batches, then Debezium |
-| Render worker | Run Typst, upload, update status | CPU and pods |
+| Render worker | Call the Typst renderer, upload, update status | Partitions and pods |
+| Typst renderer | Compile the BU template and payload into a PDF | CPU and workers |
 | Notification consumer | Send the notification, set `DELIVERED` | Partitions and pods |
 | Recovery cron | Re-drive stuck invoices | Batches, one claim per row |
 | Archive job | Bundle and move old invoices | Daily batches |
@@ -87,7 +88,7 @@ The same application starts in one mode per deployment, chosen by Spring profile
 | `notify` | Notification consumer |
 | `jobs` | Outbox poller, recovery cron, archive job |
 
-Only the `render` image needs Typst and fonts. Locally, all profiles can run together.
+Typst and fonts live only in the separate Typst renderer image. Locally, all profiles can run together.
 
 ## 5. End-to-end flow
 
@@ -122,6 +123,7 @@ Only the `render` image needs Typst and fonts. Locally, all profiles can run tog
 | Render dedupe | Redis lease plus guarded update | Saves CPU, and the database remains correct without Redis | Database lock during render: holds a connection too long |
 | Post-number failure | Recovery cron reads PostgreSQL | The invoice can't be dropped, and the cron still works if a message is lost | DLQ: invoices could be forgotten |
 | Document engine | Typst only | Lightweight, and no browser to run | Chromium: heavy |
+| Typst runtime | Long-running service with warm compilers | Avoids process startup per invoice, and keeps CPU-heavy work out of the JVM | CLI per render: slower |
 | Templates | BU side, one per BU | Each BU owns its layout | Shared central templates |
 | Storage write | Create-only | A duplicate can't replace a stored invoice | Overwrite: stored checksum could stop matching |
 
@@ -131,7 +133,7 @@ Redis may hold anything that can be rebuilt from PostgreSQL, and nothing that on
 
 | Allowed | Not allowed |
 |---|---|
-| Adapter config, entity and tax rate cache | Sequence numbers |
+| Adapter config, entity, tax rate and declaration cache | Sequence numbers |
 | Done markers for dedupe | Invoice status as the truth |
 | Render leases | The render queue |
 
@@ -160,7 +162,7 @@ If Redis is down, the system reads PostgreSQL and accepts some duplicate renderi
 | Bottleneck | Approach |
 |---|---|
 | Intake | Add partitions and pods |
-| Render | Add render pods, cap Typst concurrency to CPU |
+| Render | Scale render workers and Typst renderer workers, with workers matched to CPU |
 | Hot series | Keep the transaction short, split into more series where rules allow |
 | PostgreSQL writes | Connection pool limits, partition `invoice` by month, keep outbox small |
 | Publish delay | Move from polling to CDC |
@@ -185,7 +187,7 @@ Details will be merged from the existing bundling and retrieval design.
 - Download links are signed and short-lived.
 - Operations endpoints need a separate role.
 - Logs contain IDs only, never payloads.
-- Typst reads the payload as data, with file access limited to its working directory.
+- Typst reads the payload as data, with file access limited to its assets directory.
 - Secrets come from environment or a secret manager, never the repo.
 
 ## 12. Observability
@@ -197,7 +199,7 @@ Details will be merged from the existing bundling and retrieval design.
 
 ## 13. Local environment
 
-Docker Compose runs Kafka, PostgreSQL, Redis, `fake-gcs-server`, Mailpit, Prometheus, Grafana and, from M4, Kafka Connect with Debezium. Archive pricing can't be proven locally.
+Docker Compose runs Kafka, PostgreSQL, Redis, `fake-gcs-server`, Mailpit, the Typst renderer, Prometheus, Grafana and, from M4, Kafka Connect with Debezium. Archive pricing can't be proven locally.
 
 ## 14. Rollout plan
 

@@ -10,10 +10,11 @@ These rules apply to all code in this repository.
 
 ## Comments
 
-- Never write inline comments.
-- Add a comment above a function only when it needs one, such as for a non-obvious rule or trade-off.
-- Describe why the code exists, not what each line does.
-- Write class or function descriptions only where the name and signature aren't enough.
+- Write comments in plain English, so a new reader can see what each part is and why it exists.
+- Add them to Dockerfiles, scripts, templates, config and code wherever they help.
+- Put a comment above the function, section or setting it describes.
+- Never add a comment at the end of a code line.
+- Keep comments short, and don't comment every line or repeat what the code plainly says.
 
 ## Formatting
 

@@ -37,6 +37,7 @@ Legal details such as the CIN repeat across rows of the same company. Split them
 |---|---|---|
 | Entity | Platform | `entity` table |
 | State | Platform | `gst_state` table |
+| Declarations | Platform | `declaration` table |
 | Tax | Platform | `tax_code` table |
 | Transaction | BU | `invoice.requested` event |
 | Calculated | Platform | Generated during processing |
@@ -79,6 +80,33 @@ Legal details such as the CIN repeat across rows of the same company. Split them
 ## State fields
 
 `gst_state` holds `stateCode` and `stateName`. The platform uses it to validate state codes and to find the place of supply name.
+
+## Declarations
+
+Declarations are legal or policy statements owned by the platform. BUs never send declaration text. Their event values decide which ones apply.
+
+| Field | Notes |
+|---|---|
+| `code` | Stable key, such as `EXPORT_LUT` |
+| `body` | Wording, which can use placeholders like `{lutNumber}` |
+| `bu` | Limits it to one BU |
+| `supplyCategory` | Limits it to `DOMESTIC` or `EXPORT_LUT` |
+| `reverseCharge` | Limits it to `true` or `false` |
+| `recipientRegistered` | Limits it to registered or unregistered recipients |
+| `sortOrder` | Print order |
+| `effectiveFrom`, `effectiveTo` | Dates it applies, checked against `invoiceDate` |
+
+An empty condition matches every invoice, and every filled condition must match. A shared `DeclarationResolver` selects the rows, fills in placeholders, and saves the final text in the payload.
+
+| Code | Applies when |
+|---|---|
+| `GENERAL` | Always |
+| `REVERSE_CHARGE` | `reverseCharge` is `true` |
+| `EXPORT_LUT` | `supplyCategory` is `EXPORT_LUT` |
+| `SUBSCRIPTION_PERIOD` | `bu` is `subscriptions` |
+| `ELECTRONIC_INVOICE` | Always |
+
+To change wording, end-date the old row and add a new one. Saved invoices keep their original text. To add a declaration, add a row, with no code or template change.
 
 ## Transaction fields
 
@@ -170,7 +198,7 @@ Fields used only by some BUs go in `attributes`. Each must be listed in `Invoice
 | `totalValue` | Taxable value plus tax |
 | `amountInWords` | From `totalValue`, in the invoice currency |
 | `totalTaxableValueInr`, `totalValueInr` | Invoice totals × `exchangeRate`. Equal to the totals for `INR` |
-| `declaration` | Export wording for `EXPORT_LUT`, and `null` otherwise |
+| `declarations` | Matching platform declarations, as `code` and final `text`, in order |
 
 ## Rules
 
@@ -179,6 +207,7 @@ Fields used only by some BUs go in `attributes`. Each must be listed in `Invoice
 - `countryCode` must be a valid ISO code, and not `IN`, for exports.
 - `taxCode` must have a rate on `invoiceDate`.
 - `gstin` values must pass format validation.
+- Every declaration placeholder must resolve, or the invoice goes to the DLQ before numbering.
 - An export needs `lutNumber` on the entity, and must have no GST.
 - A foreign currency needs `exchangeRate`, and `DOMESTIC` supply must use `INR`.
 - The saved payload stores a snapshot of entity and tax values, so old invoices never change.
@@ -280,7 +309,20 @@ The platform saves this in `invoice.payload`, and sends it to the document engin
   "exchangeRate": "1.0000",
   "dueDate": "2026-11-15",
   "paymentTerms": "Net 14",
-  "declaration": null,
+  "declarations": [
+    {
+      "code": "GENERAL",
+      "text": "We declare that this invoice shows the actual price of the services described and that all particulars are true and correct."
+    },
+    {
+      "code": "SUBSCRIPTION_PERIOD",
+      "text": "Subscription charges cover the service period shown against each line."
+    },
+    {
+      "code": "ELECTRONIC_INVOICE",
+      "text": "This is an electronically generated invoice and does not require a signature."
+    }
+  ],
   "supplier": {
     "entityCode": "ACME_MH",
     "legalName": "Acme Cloud Private Limited",
@@ -448,7 +490,20 @@ The `supplier` snapshot is the same as the domestic example, so it's shortened h
   "reverseCharge": false,
   "currency": "USD",
   "exchangeRate": "85.0000",
-  "declaration": "Supply meant for export under Letter of Undertaking without payment of integrated tax. LUT: AD2700000000000",
+  "declarations": [
+    {
+      "code": "GENERAL",
+      "text": "We declare that this invoice shows the actual price of the services described and that all particulars are true and correct."
+    },
+    {
+      "code": "EXPORT_LUT",
+      "text": "Supply meant for export under Letter of Undertaking without payment of integrated tax. LUT: AD2700000000000"
+    },
+    {
+      "code": "ELECTRONIC_INVOICE",
+      "text": "This is an electronically generated invoice and does not require a signature."
+    }
+  ],
   "supplier": {
     "entityCode": "ACME_MH",
     "legalName": "Acme Cloud Private Limited",

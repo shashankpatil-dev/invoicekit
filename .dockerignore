@@ -1,0 +1,4 @@
+# Ignore everything by default, then allow only what the Typst renderer image needs.
+*
+!services/typst-renderer
+!src/main/resources/adaption

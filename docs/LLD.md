@@ -42,6 +42,7 @@ archive/
 adaption/<bu>/                      One adapter per BU
 resources/adaption/<bu>/invoice.typ One template per BU
 resources/db/migration/             Flyway migrations
+services/typst-renderer/            Typst rendering service
 ```
 
 Dependency rules, enforced with ArchUnit:
@@ -162,6 +163,19 @@ CREATE TABLE tax_code (
   effective_from  date NOT NULL,
   effective_to    date,
   PRIMARY KEY (tax_code, effective_from)
+);
+
+CREATE TABLE declaration (
+  code                  text NOT NULL,
+  body                  text NOT NULL,
+  bu                    text,
+  supply_category       text CHECK (supply_category IN ('DOMESTIC', 'EXPORT_LUT')),
+  reverse_charge        boolean,
+  recipient_registered  boolean,
+  sort_order            int NOT NULL,
+  effective_from        date NOT NULL,
+  effective_to          date,
+  PRIMARY KEY (code, effective_from)
 );
 
 CREATE TABLE adapter_config (
@@ -298,6 +312,7 @@ Runtime rules:
 - Reject any payload field outside `allowed_fields`.
 - Tax amounts use `BigDecimal`, with rounding defined in shared code.
 - Adapters do no I/O. Config and rates are passed in.
+- Adapters never add declarations. See [Invoice Superset](INVOICE_SUPERSET.md).
 - Adapters use the shared `TaxCalculator`, which applies the rounding rule in [Invoice Superset](INVOICE_SUPERSET.md).
 - Tax rates are chosen by `taxCode` and `invoiceDate`, not by the current date.
 
@@ -311,8 +326,8 @@ void onInvoiceRequested(ConsumerRecord<String, byte[]> record, Acknowledgment ac
 2. Check Redis key `invoice:<bu>:<source_event_id>:done`. On a hit, ack and stop.
 3. Find the invoice by `(bu, source_event_id)`. If it exists, set the done key where the status allows it, ack and stop. The outbox and cron own any remaining work.
 4. Find the adapter. An unknown BU goes to the DLQ with `UNKNOWN_BU`.
-5. Load config, entity, state and tax rates through the cache. A `bu_entity` miss goes to the DLQ with `ENTITY_NOT_ALLOWED`.
-6. Run the adapter. Validation failures go to the DLQ with `VALIDATION_FAILED`.
+5. Load config, entity, state, tax rates and declarations through the cache. A `bu_entity` miss goes to the DLQ with `ENTITY_NOT_ALLOWED`.
+6. Run the adapter, then `DeclarationResolver`, which adds the matching declarations to the payload. Validation failures and unresolved placeholders go to the DLQ with `VALIDATION_FAILED`.
 7. Run the numbering transaction.
 8. Ack.
 
@@ -437,23 +452,48 @@ public interface DocumentEngine {
     RenderedDocument render(RenderRequest request);
 }
 
-public record RenderRequest(String bu, String invoiceNumber, JsonNode payload) {}
+public record RenderRequest(String bu, String payloadJson) {}
 public record RenderedDocument(byte[] pdf) {}
 ```
 
-`TypstDocumentEngine` steps:
+`payloadJson` stays a string, so the domain has no Jackson dependency.
 
-1. Create a temp directory per render.
-2. Write `payload.json`, and copy the BU template and assets.
-3. Run `typst compile --root <dir> invoice.typ invoice.pdf`, with no shell.
-4. Enforce a 30 second timeout and kill the process on expiry.
-5. Read the PDF and always delete the directory.
+`TypstDocumentEngine` calls the Typst renderer over HTTP, with a client timeout below the service's 30 second worker timeout.
 
-Templates read data with `json("payload.json")`, so payload values stay data and can't execute as template code.
+| Response | Exception | Retried |
+|---|---|---|
+| `200` | None | No |
+| `400`, `404`, `422` | `RenderRejectedException` | No, cron ends at `FAILED` |
+| `5xx`, timeout, connection failure | `RenderUnavailableException` | Yes |
 
-A semaphore limits concurrent Typst processes to the number of CPU cores. Fonts are bundled in the image, so output doesn't depend on the host.
+### Typst renderer
 
-Process startup per render is a known cost, and the load test will measure it. If it dominates, evaluate a long-running process or an embedded Typst library.
+`services/typst-renderer` is a small Python service, using Typst 0.15.0 and gunicorn. It runs as its own container, so Typst doesn't share CPU or memory with the JVM.
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /render/<bu>` | Renders the JSON body to a PDF |
+| `GET /health` | Health check |
+
+| Status | Meaning |
+|---|---|
+| `200` | `application/pdf` |
+| `400` | Invalid JSON |
+| `404` | No template for this BU |
+| `422` | Compile error or any warning, with Typst's diagnostic |
+
+Rules:
+
+- **Warm compilers:** one compiler per template is built at startup and reused.
+- **Templates:** the image build copies `resources/adaption/`, so `<bu>` is looked up in a fixed list and never builds a file path.
+- **Data only:** the payload arrives through `sys.inputs.payload`, and templates read it with `json()`, so its values can't run as template code.
+- **Fonts:** Source Sans 3 is bundled in the image, and system fonts are ignored.
+- **Warnings fail:** Typst only warns about a missing font, so any warning fails the render.
+- **Confinement:** file reads are limited to the assets directory, and no packages are downloaded.
+- **Workers:** set `WEB_CONCURRENCY` to the container's CPU limit, because compiling is CPU-bound. Workers recycle after about 5,000 requests.
+- **Upgrades:** Typst is pre-1.0, so its version is pinned, and any upgrade needs the output rechecked.
+
+Load tests must use different data on every request, because Typst caches repeated work.
 
 ### Storage
 
@@ -537,6 +577,7 @@ The 5 minute threshold must stay above the 120 second lease and the 60 second re
 |---|---|---|---|
 | `invoicekit:config:<bu>` | Active config | 5 min | Read PostgreSQL |
 | `invoicekit:entity:<entity_code>` | Entity details | 5 min | Read PostgreSQL |
+| `invoicekit:declarations` | Declaration rules | 5 min | Read PostgreSQL |
 | `invoicekit:tax:<tax_code>:<date>` | Rate for the date | 1 hour | Read PostgreSQL |
 | `invoice:<bu>:<source_event_id>:done` | `1` | 24 hours | Read PostgreSQL |
 | `invoice:<bu>:<source_event_id>:render` | Worker ID | 120 sec | Render anyway |
@@ -618,7 +659,7 @@ invoicekit:
 | `invoice_oldest_numbered_age_seconds` | Gauge |
 | `outbox_oldest_unsent_age_seconds` | Gauge |
 | `numbering_commit_duration_seconds{bu,region}` | Histogram |
-| `typst_render_duration_seconds{bu}` | Histogram |
+| `typst_render_duration_seconds{bu}` | Histogram, measured by the Java client |
 | `redis_fallback_total{operation}` | Counter |
 | `dlq_events_total{bu,error_code}` | Counter |
 | `replication_slot_lag_bytes` | Gauge |

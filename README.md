@@ -31,6 +31,7 @@ docker compose up -d
 | fake-gcs-server | `localhost:4443` |
 | Mailpit SMTP | `localhost:1025` |
 | Mailpit UI | http://localhost:8025 |
+| Typst renderer | `localhost:3002` |
 | Prometheus | http://localhost:9091 |
 | Grafana | http://localhost:3001 |
 
@@ -49,6 +50,7 @@ src/main/java/com/shashank/invoicekit/
 src/main/resources/
   adaption/          One template folder per BU
   db/migration/      Flyway migrations
+services/typst-renderer/  Typst rendering service
 deploy/local/        Docker Compose and local config
 loadtest/k6/         Load tests
 failuretest/         Failure test scenarios

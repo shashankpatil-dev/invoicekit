@@ -77,6 +77,22 @@ services:
       - "1025:1025"
       - "8025:8025"
 
+  # Turns invoice payloads into PDFs. See services/typst-renderer.
+  typst-renderer:
+    build:
+      context: ../..
+      dockerfile: services/typst-renderer/Dockerfile
+    environment:
+      # Number of render workers. Match this to the CPUs given to the container.
+      WEB_CONCURRENCY: 2
+    ports:
+      - "3002:3000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   prometheus:
     image: prom/prometheus:v3.5.0
     extra_hosts:
