@@ -11,23 +11,43 @@ Error responses:
     400   The body is not valid JSON.
     404   There is no template for this business unit.
     422   Typst failed to compile the invoice, or raised a warning.
+    503   Too many renders are waiting. Retry later.
+
+Each worker renders one invoice at a time, and a small number of others may wait.
+Anything beyond that is refused immediately, which always leaves a thread free
+to answer /health, even when the worker is overloaded.
 """
 
 import json
 import os
-from pathlib import Path
+import threading
+import time
 
 import typst
 
-# Fonts and BU templates are copied here when the Docker image is built.
-ASSETS = Path(os.environ.get("ASSETS_DIR", "/app/assets"))
+from settings import (
+    ASSETS_DIR,
+    MAX_WAITING_RENDERS,
+    RENDER_SLOTS,
+    RENDER_TIMEOUT_SECONDS,
+    WATCHDOG_INTERVAL_SECONDS,
+)
 
 # Use only our bundled fonts, so an invoice looks the same on every machine.
 FONTS = typst.Fonts(
     include_system_fonts=False,
     include_embedded_fonts=False,
-    font_paths=[str(ASSETS / "fonts")],
+    font_paths=[str(ASSETS_DIR / "fonts")],
 )
+
+# Counts renders that are running or waiting. Requests beyond this limit get a 503.
+ADMITTED_RENDERS = threading.BoundedSemaphore(RENDER_SLOTS + MAX_WAITING_RENDERS)
+
+# Lets one admitted render run. The others sleep here without using CPU.
+RENDER_SLOT = threading.Semaphore(RENDER_SLOTS)
+
+# When the current render began. Only the thread holding RENDER_SLOT changes it.
+render_started_at = None
 
 
 class RenderError(Exception):
@@ -44,11 +64,11 @@ def load_compilers():
     return {
         template.parent.name: typst.Compiler(
             str(template),
-            root=str(ASSETS),
+            root=str(ASSETS_DIR),
             font_paths=FONTS,
             ignore_system_fonts=True,
         )
-        for template in (ASSETS / "adaption").glob("*/invoice.typ")
+        for template in (ASSETS_DIR / "adaption").glob("*/invoice.typ")
     }
 
 
@@ -73,8 +93,37 @@ def render(business_unit, payload):
     return pdf
 
 
+def render_in_turn(business_unit, payload):
+    """Waits for the render slot, then renders while the watchdog keeps time."""
+    global render_started_at
+    with RENDER_SLOT:
+        render_started_at = time.monotonic()
+        try:
+            return render(business_unit, payload)
+        finally:
+            render_started_at = None
+
+
+def watch_renders():
+    """Replaces this worker if a render gets stuck.
+
+    A Typst compile can't be cancelled from Python, and a stuck one would hold
+    the render slot forever. Exiting makes gunicorn start a clean worker.
+    """
+    while True:
+        time.sleep(WATCHDOG_INTERVAL_SECONDS)
+        started_at = render_started_at
+        if started_at is not None and time.monotonic() - started_at > RENDER_TIMEOUT_SECONDS:
+            os._exit(1)
+
+
+def start_watchdog():
+    """Starts the watchdog. Gunicorn calls this once inside each worker."""
+    threading.Thread(target=watch_renders, daemon=True).start()
+
+
 def app(environ, start_response):
-    """Handles each HTTP request. Gunicorn calls this function directly."""
+    """Routes each request. /health never touches the render queue, so it can't wait behind it."""
     method = environ["REQUEST_METHOD"]
     path = environ["PATH_INFO"]
 
@@ -96,10 +145,15 @@ def app(environ, start_response):
     except ValueError:
         return respond(start_response, "400 Bad Request", b"Invalid JSON", "text/plain")
 
+    if not ADMITTED_RENDERS.acquire(blocking=False):
+        return respond(start_response, "503 Service Unavailable", b"Too many renders waiting", "text/plain")
+
     try:
-        return respond(start_response, "200 OK", render(business_unit, payload), "application/pdf")
+        return respond(start_response, "200 OK", render_in_turn(business_unit, payload), "application/pdf")
     except RenderError as error:
         return respond(start_response, "422 Unprocessable Entity", str(error).encode(), "text/plain")
+    finally:
+        ADMITTED_RENDERS.release()
 
 
 def respond(start_response, status, body, content_type):

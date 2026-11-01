@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Draft |
+| Status | Draft, document engine built |
 | Date | 2026-11-01 |
 | Related | [HLD](HLD.md), [LLD](LLD.md) |
 
@@ -176,7 +176,11 @@ Each BU has its own invoice fields, tax handling and layout. Building invoice ge
 - Each event contains its entity, place of supply and invoice date.
 - A 50KB average PDF is used for planning until real templates exist.
 
-## 12. Risks
+## 12. Current status
+
+The document engine is complete for now, with the `subscriptions` template and the Typst renderer. It held 100 rps with zero errors in load tests, and those tests cover rendering only. See [Load Test Results](LOAD_TEST.md).
+
+## 13. Risks
 
 | Risk | Mitigation |
 |---|---|
@@ -187,7 +191,7 @@ Each BU has its own invoice fields, tax handling and layout. Building invoice ge
 | Debezium downtime grows PostgreSQL WAL | Alert on slot lag and cap retained WAL |
 | Local tests don't reflect the cloud | Label results as local, and repeat in the cloud later |
 
-## 13. Open questions
+## 14. Open questions
 
 - What is the legal retention period?
 - What are the formal rules for cancelling an invoice?

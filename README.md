@@ -2,7 +2,7 @@
 
 Event-driven invoice generation for multiple business units, built with Java 21, Spring Boot, Kafka, PostgreSQL, Redis and Typst.
 
-This repository holds the project base. Application code isn't written yet.
+The document engine is complete for now. The invoice flow, numbering, archive and BU adapters aren't built yet.
 
 ## Docs
 
@@ -10,6 +10,7 @@ This repository holds the project base. Application code isn't written yet.
 - [HLD](docs/HLD.md)
 - [LLD](docs/LLD.md)
 - [Invoice Superset](docs/INVOICE_SUPERSET.md)
+- [Load Test Results](docs/LOAD_TEST.md)
 - [Code Conventions](docs/CONVENTIONS.md)
 
 ## CI
@@ -18,7 +19,7 @@ GitHub Actions runs `./gradlew build` on every push to `main` and every pull req
 
 ## Local infrastructure
 
-```bash`
+```bash
 cd deploy/local
 docker compose up -d
 ```
@@ -50,8 +51,10 @@ src/main/java/com/shashank/invoicekit/
 src/main/resources/
   adaption/          One template folder per BU
   db/migration/      Flyway migrations
+  config/            Engineering settings, one file per topic
 services/typst-renderer/  Typst rendering service
 deploy/local/        Docker Compose and local config
+deploy/kind/         Kubernetes manifests for local load tests
 loadtest/k6/         Load tests
 failuretest/         Failure test scenarios
 ```

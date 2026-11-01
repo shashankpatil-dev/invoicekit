@@ -12,10 +12,17 @@ import org.springframework.web.client.RestClient;
 @Configuration
 public class DocumentEngineConfiguration {
 
-  /** Both timeouts use the same limit, so a stuck renderer can never hold a worker forever. */
+  /**
+   * Uses HTTP/1.1 because that's what the renderer speaks. Both timeouts use the same limit, so a
+   * stuck renderer can never hold a Java worker forever.
+   */
   @Bean
   public DocumentEngine documentEngine(TypstRendererProperties properties) {
-    HttpClient httpClient = HttpClient.newBuilder().connectTimeout(properties.timeout()).build();
+    HttpClient httpClient =
+        HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
+            .connectTimeout(properties.timeout())
+            .build();
     JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
     requestFactory.setReadTimeout(properties.timeout());
 

@@ -1,0 +1,58 @@
+# All InvoiceKit load test resources live in this namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fp
+---
+# The Typst renderer. Each pod gets a fixed 1 CPU and 2GiB, so pod count is the only thing that changes.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: document-engine
+  namespace: fp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: document-engine
+  template:
+    metadata:
+      labels:
+        app: document-engine
+    spec:
+      containers:
+        - name: typst-renderer
+          image: invoicekit/typst-renderer:loadtest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 3000
+          env:
+            # One worker per CPU, because rendering is CPU-heavy.
+            - name: WEB_CONCURRENCY
+              value: "1"
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            periodSeconds: 2
+            timeoutSeconds: 3
+---
+# Gives k6 one stable address that spreads requests across the pods.
+apiVersion: v1
+kind: Service
+metadata:
+  name: document-engine
+  namespace: fp
+spec:
+  selector:
+    app: document-engine
+  ports:
+    - port: 3000
+      targetPort: 3000

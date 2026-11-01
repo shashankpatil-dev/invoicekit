@@ -1,66 +1,20 @@
-server:
-  port: ${SERVER_PORT:8081}
-
+# Application name and config imports. Settings live in resources/config, one file per topic.
 spring:
   application:
     name: invoicekit
-  threads:
-    virtual:
-      enabled: true
-  datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5433/invoicekit}
-    username: ${DB_USERNAME:invoicekit}
-    password: ${DB_PASSWORD:invoicekit}
-  flyway:
-    enabled: true
-  data:
-    redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6380}
-  kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}
-    consumer:
-      enable-auto-commit: false
-      auto-offset-reset: earliest
-    producer:
-      acks: all
-      properties:
-        enable.idempotence: true
-    listener:
-      ack-mode: manual
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,prometheus
-
-invoicekit:
-  storage:
-    endpoint: ${STORAGE_ENDPOINT:http://localhost:4443}
-    bucket: ${STORAGE_BUCKET:invoices}
-  notification:
-    smtp-host: ${SMTP_HOST:localhost}
-    smtp-port: ${SMTP_PORT:1025}
-  outbox:
-    mode: polling
-    poll-interval: 100ms
-    batch-size: 500
-  render:
-    url: ${TYPST_RENDERER_URL:http://localhost:3002}
-    timeout: 25s
-    max-concurrency: 4
-    lease-ttl: 120s
-  recovery:
-    interval: 1m
-    numbered-stuck-after: 5m
-    stored-stuck-after: 15m
-    max-attempts: 5
-    batch-size: 100
-  archive:
-    older-than-days: 90
+  config:
+    import:
+      - classpath:config/server.properties
+      - classpath:config/database.properties
+      - classpath:config/kafka.properties
+      - classpath:config/redis.properties
+      - classpath:config/storage.properties
+      - classpath:config/render.properties
+      - classpath:config/jobs.properties
+      - classpath:config/notification.properties
 
 ---
+# Worker profiles run without a web server.
 spring:
   config:
     activate:

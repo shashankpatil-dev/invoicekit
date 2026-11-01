@@ -16,6 +16,12 @@ These rules apply to all code in this repository.
 - Never add a comment at the end of a code line.
 - Keep comments short, and don't comment every line or repeat what the code plainly says.
 
+## Configuration
+
+- Never hardcode a tunable value. Put engineering-owned settings in a `.properties` file.
+- Use one file per topic, such as database, Kafka or Redis. See the LLD for the list.
+- Add a short comment above each setting or group, saying what it controls.
+
 ## Formatting
 
 Spotless applies Google Java Format.

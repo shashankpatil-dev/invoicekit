@@ -2,9 +2,19 @@
 
 | | |
 |---|---|
-| Status | Draft |
+| Status | Draft, document engine built |
 | Date | 2026-11-01 |
 | Related | [PRD](PRD.md), [HLD](HLD.md) |
+
+## Build status
+
+| Module | Status |
+|---|---|
+| `documentengine` | Complete for now, with the `subscriptions` template |
+| `services/typst-renderer` | Complete for now |
+| `invoice`, `numbering`, `archive`, `adaption` | Not built yet |
+
+The document engine still needs the `international` template and a full-pipeline load test. See [Load Test Results](LOAD_TEST.md).
 
 ## 1. Code structure
 
@@ -76,7 +86,7 @@ Retention is 7 days, with 14 days for the DLQ. Replication factor is 3 in the cl
 | Consumer `enable.auto.commit` | `false` |
 | Listener ack mode | Manual, after work is safe |
 | Consumer `auto.offset.reset` | `earliest` |
-| Render `max.poll.records` | Small, tied to Typst concurrency |
+| Render `max.poll.records` | Small, tied to render concurrency |
 | Render `max.poll.interval.ms` | Above the longest retry cycle |
 | Producer `acks` | `all` |
 | Producer `enable.idempotence` | `true` |
@@ -445,6 +455,8 @@ void onInvoiceRender(ConsumerRecord<String, byte[]> record, Acknowledgment ack)
 
 If steps 4 to 6 still fail, release the lease and ack. The row stays `NUMBERED` for cron. The full retry cycle stays under 60 seconds.
 
+A `503` from the Typst renderer follows this same path. Render retries use backoff with jitter, so workers don't all retry at the same moment.
+
 ### Document engine
 
 ```java
@@ -464,7 +476,7 @@ public record RenderedDocument(byte[] pdf) {}
 |---|---|---|
 | `200` | None | No |
 | `400`, `404`, `422` | `RenderRejectedException` | No, cron ends at `FAILED` |
-| `5xx`, timeout, connection failure | `RenderUnavailableException` | Yes |
+| `5xx`, including `503` when the render queue is full, timeout, connection failure | `RenderUnavailableException` | Yes |
 
 ### Typst renderer
 
@@ -481,6 +493,7 @@ public record RenderedDocument(byte[] pdf) {}
 | `400` | Invalid JSON |
 | `404` | No template for this BU |
 | `422` | Compile error or any warning, with Typst's diagnostic |
+| `503` | The render queue is full |
 
 Rules:
 
@@ -491,6 +504,9 @@ Rules:
 - **Warnings fail:** Typst only warns about a missing font, so any warning fails the render.
 - **Confinement:** file reads are limited to the assets directory, and no packages are downloaded.
 - **Workers:** set `WEB_CONCURRENCY` to the container's CPU limit, because compiling is CPU-bound. Workers recycle after about 5,000 requests.
+- **Threads:** each worker has 8 threads. One renders, up to 6 wait, and one stays free for `/health`, so readiness doesn't fail under overload.
+- **Queue limit:** a 7th waiting render gets `503` immediately. Rendering stays one at a time per worker.
+- **Watchdog:** a render running over 30 seconds makes the worker exit, and gunicorn starts a clean one. A stuck compile can't be cancelled from Python.
 - **Upgrades:** Typst is pre-1.0, so its version is pinned, and any upgrade needs the output rechecked.
 
 Load tests must use different data on every request, because Typst caches repeated work.
@@ -630,26 +646,21 @@ The detailed bundling and retrieval design already exists and will be merged her
 
 ## 15. Configuration
 
-```yaml
-invoicekit:
-  outbox:
-    mode: polling        # polling or cdc
-    poll-interval: 100ms
-    batch-size: 500
-  render:
-    url: http://localhost:3002
-    timeout: 25s
-    max-concurrency: 4
-    lease-ttl: 120s
-  recovery:
-    interval: 1m
-    numbered-stuck-after: 5m
-    stored-stuck-after: 15m
-    max-attempts: 5
-    batch-size: 100
-  archive:
-    older-than-days: 90
-```
+Engineering-owned settings live in `.properties` files, one file per topic. Values read from the environment use `${NAME:default}`.
+
+| File | Covers |
+|---|---|
+| `resources/config/server.properties` | HTTP port, virtual threads, monitoring |
+| `resources/config/database.properties` | PostgreSQL and Flyway |
+| `resources/config/kafka.properties` | Kafka client settings |
+| `resources/config/redis.properties` | Redis connection |
+| `resources/config/storage.properties` | Object storage and archive age |
+| `resources/config/render.properties` | Typst renderer client |
+| `resources/config/jobs.properties` | Outbox and recovery cron |
+| `resources/config/notification.properties` | Mail server |
+| `services/typst-renderer/config/renderer.properties` | Renderer queue, timeouts and gunicorn |
+
+`application.yml` only imports these files and sets worker profiles. A new topic gets its own file. Renderer values can be overridden by environment variable, so `render.max-waiting` becomes `RENDER_MAX_WAITING`. The renderer refuses to start unless `server.threads` exceeds `render.slots + render.max-waiting`.
 
 ## 16. Observability
 
@@ -720,6 +731,8 @@ GitHub Actions runs `./gradlew build` on every push to `main` and every pull req
 - Merge the bundling and retrieval design.
 - Define API authentication.
 - Test `ifGenerationMatch` on `fake-gcs-server`.
-- Set partition counts and render concurrency from load tests.
+- Set partition counts and render concurrency from full-pipeline load tests.
+- Find the cause of the 2 early failures in the gradual load test.
+- Load test a saturated pod on Kubernetes with the overload changes.
 - Rename `bu` to `businessUnit` in the schema, JSON contract and docs.
 - Measure payload cost under load, including the String to bytes copy in `TypstDocumentEngine`. Consider Protobuf for Kafka messages only if the numbers justify it. PostgreSQL `jsonb` and Typst both still need JSON.

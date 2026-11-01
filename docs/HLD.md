@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Draft |
+| Status | Draft, document engine built |
 | Date | 2026-11-01 |
 | Related | [PRD](PRD.md), [LLD](LLD.md) |
 
@@ -70,7 +70,7 @@ After the commit stage, an invoice must be completed. Every later failure is a d
 | Numbering | Allocate the next number in a series | Number of series |
 | Outbox publisher | Move committed events to Kafka | Polling batches, then Debezium |
 | Render worker | Call the Typst renderer, upload, update status | Partitions and pods |
-| Typst renderer | Compile the BU template and payload into a PDF | CPU and workers |
+| Typst renderer | Compile the BU template and payload into a PDF, and refuse extra work with `503` | CPU and workers |
 | Notification consumer | Send the notification, set `DELIVERED` | Partitions and pods |
 | Recovery cron | Re-drive stuck invoices | Batches, one claim per row |
 | Archive job | Bundle and move old invoices | Daily batches |
