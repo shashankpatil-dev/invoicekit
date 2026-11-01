@@ -2,6 +2,7 @@ plugins {
   java
   id("org.springframework.boot") version "3.5.6"
   id("io.spring.dependency-management") version "1.1.7"
+  id("com.diffplug.spotless") version "7.2.1"
 }
 
 group = "com.shashank"
@@ -39,8 +40,13 @@ dependencies {
 }
 
 springBoot {
-  // Set explicitly because the Application class is not written yet.
   mainClass = "com.shashank.invoicekit.Application"
+}
+
+spotless {
+  java {
+    googleJavaFormat()
+  }
 }
 
 tasks.test {

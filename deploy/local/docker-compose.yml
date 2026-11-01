@@ -3,7 +3,6 @@ name: invoicekit
 services:
   postgres:
     image: postgres:16.4-alpine
-    # Logical WAL is what Debezium reads in the cdc profile.
     command: ["postgres", "-c", "wal_level=logical", "-c", "max_slot_wal_keep_size=2GB"]
     environment:
       POSTGRES_DB: invoicekit

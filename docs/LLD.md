@@ -632,6 +632,10 @@ The `step` label values are `adapter`, `numbering`, `publish`, `render`, `upload
 
 After each test, a reconciliation query must confirm that each series runs from 1 to `last_no` with no missing or repeated numbers, and that every `STORED` invoice has an object.
 
+### CI
+
+GitHub Actions runs `./gradlew build` on every push to `main` and every pull request, using Java 21. This covers Spotless formatting, compilation and all tests. See [Code Conventions](CONVENTIONS.md).
+
 ## 18. Implementation order
 
 1. Gradle setup, Docker Compose, Flyway schema, ArchUnit rules.

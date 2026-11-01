@@ -9,6 +9,11 @@ This repository holds the project base. Application code isn't written yet.
 - [PRD](docs/PRD.md)
 - [HLD](docs/HLD.md)
 - [LLD](docs/LLD.md)
+- [Code Conventions](docs/CONVENTIONS.md)
+
+## CI
+
+GitHub Actions runs `./gradlew build` on every push to `main` and every pull request. Run the same command locally before pushing.
 
 ## Local infrastructure
 
