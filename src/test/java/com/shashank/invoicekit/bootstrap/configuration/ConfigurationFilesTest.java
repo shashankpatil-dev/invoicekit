@@ -27,6 +27,11 @@ class ConfigurationFilesTest {
           assertThat(environment.getProperty("invoicekit.outbox.mode")).isEqualTo("polling");
           assertThat(environment.getProperty("invoicekit.notification.smtp-port"))
               .isEqualTo("1025");
+          assertThat(environment.getProperty("invoicekit.numbering.lock-timeout")).isEqualTo("2s");
+          assertThat(environment.getProperty("invoicekit.numbering.statement-timeout"))
+              .isEqualTo("5s");
+          assertThat(environment.getProperty("invoicekit.numbering.utilisation-warning"))
+              .isEqualTo("0.8");
           assertThat(environment.getProperty("server.port")).isEqualTo("8081");
         });
   }
