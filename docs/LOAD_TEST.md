@@ -2,9 +2,11 @@
 
 | | |
 |---|---|
-| Status | Document engine only |
-| Date | 2026-11-01 |
-| Scripts | `loadtest/kind/run.sh`, `loadtest/k6/run.sh` |
+| Status | Document engine and numbering |
+| Date | 2026-11-01, numbering on 2026-11-04 |
+| Scripts | `loadtest/kind/run.sh`, `loadtest/k6/run.sh`. The numbering harness was removed after its run, see [Numbering](#numbering) |
+
+# Document engine
 
 ## Result
 
@@ -95,3 +97,61 @@ PEAK_ONLY=1 loadtest/k6/run.sh
 ```
 
 Both scripts need Docker. `loadtest/kind/run.sh` also needs `kind`, `kubectl` and `helm`, and installs the document engine with its Helm chart in `deploy/helm/document-engine`. They remove their containers, cluster and images when they finish.
+
+# Numbering
+
+## Result
+
+**One series held 600 rps at p99 4.2ms, and 4 shards held 1,000 rps at p99 2.9ms, with no failed requests and no gaps across 419,145 numbered orders.** One series saturated at about 880 rps, where PostgreSQL CPU rose to 1.87 of its 2 cores and latency jumped to about 1 second.
+
+## What was tested
+
+- **Flow:** k6 posted dummy orders to a temporary load-test endpoint. Each order ran the real numbering path in one transaction: insert the invoice, `NumberingService.assign`, then store the number.
+- **Kubernetes:** one `kind` node, namespace `numbering`. 2 app pods with 1 CPU and 1GiB each, and a connection pool of 10 per pod. PostgreSQL 16.4 in one pod with 2 CPUs and 2GiB.
+- **Series:** `numbering-test` with 1 shard (`SUB{shard}{fy}{seq:10}`), and `numbering-test-sharded` with 4 shards (`SHD{shard}{fy}{seq:10}`).
+- **Checks:** every response was checked against the number format. After each phase, the reconciliation query confirmed every series ran from 1 to N with no gaps or duplicates, and that each counter matched its invoices.
+- **Host:** one 12-core machine also running k6, the cluster and another project's containers. Results aren't production numbers.
+
+## Results
+
+Each phase ran for 2 minutes at a fixed arrival rate, after a 30 second warm-up at 20 rps.
+
+| Phase | Requests | Achieved rps | Failed | Dropped | p50 | p95 | p99 | Max | Gaps | PostgreSQL cores | App cores |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 series, 100 rps | 12,001 | 100 | 0 | 0 | 2.5ms | 3.9ms | 5.1ms | 24.5ms | None | 0.11 | 0.29 |
+| 1 series, 300 rps | 36,001 | 300 | 0 | 0 | 1.7ms | 2.2ms | 3.7ms | 51.4ms | None | 0.28 | 0.30 |
+| 1 series, 600 rps | 72,000 | 600 | 0 | 0 | 1.4ms | 1.9ms | 4.2ms | 69.0ms | None | 0.44 | 0.34 |
+| 1 series, 1,000 rps | 106,540 | 880 | 0 | 13,461 | 1,075ms | 1,399ms | 1,662ms | 3,404ms | None | 1.87 | 0.75 |
+| 4 shards, 600 rps | 72,001 | 600 | 0 | 0 | 1.4ms | 1.8ms | 3.2ms | 26.7ms | None | 0.43 | 0.31 |
+| 4 shards, 1,000 rps | 120,001 | 1,000 | 0 | 0 | 1.3ms | 1.7ms | 2.9ms | 30.5ms | None | 0.67 | 0.45 |
+
+"Dropped" means k6 couldn't start a request on time because earlier ones were still waiting, so the load generator was holding requests back.
+
+At 1,000 rps, the 4 shards split the load evenly: 30,007, 30,003, 29,994 and 29,997 numbers.
+
+## Findings
+
+1. **The row lock is the limit, and shards remove it.** At 1,000 rps, one series made PostgreSQL use 1.87 cores, while 4 shards at the same rate used 0.67. The extra CPU was spent on workers queuing for one counter row, not on useful work.
+2. **One series covers the 10-year plan.** It ran 600 rps at p99 4.2ms, about 5 times the year-10 average of 116 rps.
+3. **Add shards before a series' peak reaches about 600 rps.** Above that, one series degrades sharply instead of gradually.
+4. **Latency is far inside the targets.** Below saturation, p99 stayed under 5ms against the 150ms goal.
+5. **Correctness held under overload.** Even the saturated phase numbered every order exactly once, with no gaps.
+
+## Not tested
+
+- More than 2 app pods, or pool sizes other than 10. More concurrent connections per series would likely lower the single-series limit, as the earlier `pgbench` run showed.
+- A managed database with network latency, which lengthens each lock hold.
+- Long runs, PostgreSQL restarts, or failover under load. The failure tests cover these at small scale.
+- The full flow through Kafka, rendering and storage, which waits for the invoice module.
+
+## How to reproduce
+
+The harness was temporary and has been removed. It is in commit `ed7ddf9`:
+
+```bash
+git checkout ed7ddf9
+loadtest/numbering/run.sh
+```
+
+It needs Docker, `kind` and `kubectl`, and deletes its cluster and images when it finishes.
+

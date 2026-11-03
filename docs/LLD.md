@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Draft, document engine built |
+| Status | Draft, document engine and numbering built |
 | Date | 2026-11-01 |
 | Related | [PRD](PRD.md), [HLD](HLD.md) |
 
@@ -12,7 +12,7 @@
 |---|---|
 | `documentengine` | Complete for now, with the `subscriptions` template |
 | `document-engine` | Complete for now |
-| `numbering` | Complete, final load test pending. See [Numbering Design](NUMBERING.md) |
+| `numbering` | Complete and load tested. See [Numbering Design](NUMBERING.md) |
 | `invoice`, `archive`, `adaption` | Not built yet |
 
 The document engine still needs the `international` template and a full-pipeline load test. See [Load Test Results](LOAD_TEST.md).

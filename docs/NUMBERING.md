@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Built, final load test pending |
+| Status | Built and load tested |
 | Date | 2026-11-04 |
 | Related | [LLD](LLD.md), [HLD](HLD.md), [Invoice Superset](INVOICE_SUPERSET.md) |
 
@@ -139,7 +139,7 @@ A series has two separate limits:
 | Limit | What sets it | For `{seq:10}` |
 |---|---|---|
 | **Space** | Digits in `{seq:N}`, renewed every financial year | 9,999,999,999 numbers per series per year |
-| **Speed** | How long the counter row is locked per number | 827 numbers/sec measured on one local series, see section 10 |
+| **Speed** | How long the counter row is locked per number | About 880 numbers/sec on one series in the Kubernetes load test, see section 10 |
 
 Growth plan: one BU and entity growing from 10 lakh to 1 crore orders a day over 10 years, about 29% a year:
 
@@ -152,7 +152,7 @@ Growth plan: one BU and entity growing from 10 lakh to 1 crore orders a day over
 | 20 | 129M | 47.1B | 1,495 | 5 |
 
 - **One series has enough space for the whole 10-year plan.** 26 shards hold about 260B numbers a year, which lasts far beyond it.
-- **Speed decides when to add shards.** At year 10 the average is 116 rps, and peaks may be several times that. Add shards when the measured peak gets close to the counter row's limit, not when space runs out.
+- **Speed decides when to add shards.** At year 10 the average is 116 rps, and peaks may be several times that. One series held 600 rps at p99 4.2ms in the load test, so add shards before a series' peak reaches about 600 rps.
 
 Running out must never silently wrap or reuse numbers:
 
@@ -395,7 +395,19 @@ What this shows:
 
 - **More workers on one series make it slower.** Going from 8 to 32 workers halves throughput, because waiters pile up behind the row lock. Concurrency per series must stay capped, and the connection pool and consumer threads are the cap.
 - **Shards multiply throughput,** because each has its own row and its own queue.
-- **These are local numbers.** A real database adds network time to each lock hold. The full load test will measure the real flow.
+- **These are local numbers.** A real database adds network time to each lock hold.
+
+### Kubernetes load test
+
+Run through the real numbering path in `kind`, with 2 app pods, a pool of 10 per pod, and PostgreSQL with 2 CPUs. Full results are in [Load Test Results](LOAD_TEST.md#numbering).
+
+| Setup | Rate | Achieved | p99 | PostgreSQL cores |
+|---|---|---|---|---|
+| 1 series | 600 rps | 600 rps | 4.2ms | 0.44 |
+| 1 series | 1,000 rps | 880 rps, saturated | 1,662ms | 1.87 |
+| 4 shards | 1,000 rps | 1,000 rps | 2.9ms | 0.67 |
+
+The saturated single series spent its extra CPU on workers queuing for the counter row, and 4 shards at the same rate used a third of the CPU. No phase lost or repeated a number.
 
 ### Scaling path
 
@@ -521,4 +533,4 @@ Prometheus shows these with underscores, such as `numbering_allocation_seconds`.
 - Each shard is a separate series in GST returns, as I understand it. Confirm how the returns list multiple series per GSTIN.
 - Confirm how to number a late invoice dated in the previous financial year. The design continues that year's series.
 - Confirm that a 2-digit starting year, such as `26` for 2026-27, is clear enough for auditors.
-- Run the full load test through the invoice flow, which decides the connection pool cap and when to add shards for speed.
+- Load test the full flow through Kafka once the invoice module exists, including more app pods and other pool sizes.
