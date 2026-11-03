@@ -89,3 +89,27 @@ tasks.jacocoTestCoverageVerification {
 tasks.check {
   dependsOn(tasks.jacocoTestCoverageVerification)
 }
+
+// ---- TEMPORARY numbering load test harness (loadtest/numbering/run.sh) ----
+// To remove it, delete this block, src/loadtest and loadtest/numbering.
+// Its classes go only into build/libs/invoicekit-loadtest.jar, never into the normal bootJar.
+val loadtest: SourceSet by sourceSets.creating {
+  compileClasspath += sourceSets.main.get().output
+  runtimeClasspath += sourceSets.main.get().output
+}
+
+configurations[loadtest.implementationConfigurationName].extendsFrom(configurations.implementation.get())
+configurations[loadtest.runtimeOnlyConfigurationName].extendsFrom(configurations.runtimeOnly.get())
+
+// Reuses the temporary test series from the tests instead of copying it.
+tasks.named<ProcessResources>(loadtest.processResourcesTaskName) {
+  from("src/test/resources") { include("db/testseries/**") }
+}
+
+tasks.register<org.springframework.boot.gradle.tasks.bundling.BootJar>("loadtestBootJar") {
+  archiveFileName = "invoicekit-loadtest.jar"
+  mainClass = "com.shashank.invoicekit.Application"
+  targetJavaVersion = java.targetCompatibility
+  classpath(loadtest.runtimeClasspath)
+}
+// ---- END TEMPORARY numbering load test harness ----

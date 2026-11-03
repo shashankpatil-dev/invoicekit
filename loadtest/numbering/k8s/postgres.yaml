@@ -1,0 +1,62 @@
+# PostgreSQL for the numbering load test. Data lives in an emptyDir, so it goes with the cluster.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: numbering
+  labels:
+    app: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16.4-alpine
+          imagePullPolicy: Never
+          # Room for several app pods with large pools, so a pool test never hits the server limit.
+          args: ["-c", "max_connections=200"]
+          env:
+            - name: POSTGRES_DB
+              value: invoicekit
+            - name: POSTGRES_USER
+              value: invoicekit
+            - name: POSTGRES_PASSWORD
+              value: invoicekit
+          ports:
+            - containerPort: 5432
+          # Fixed size, so results from different runs stay comparable.
+          resources:
+            requests:
+              cpu: "2"
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "invoicekit", "-d", "invoicekit"]
+            periodSeconds: 2
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: numbering
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
