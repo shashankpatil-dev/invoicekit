@@ -65,7 +65,7 @@ class NumberingConcurrencyTest {
     Map<String, Long> lastNumbers = reconciliation.lastNumbersByShard(FOUR_SHARDS, FINANCIAL_YEAR);
     assertThat(numbers).hasSize(ORDERS).doesNotHaveDuplicates();
     assertThat(lastNumbers).containsOnlyKeys("A", "B", "C", "D");
-    assertThat(lastNumbers.values().stream().mapToLong(Long::longValue).sum()).isEqualTo(ORDERS);
+    assertThat(reconciliation.issuedCount(FOUR_SHARDS, FINANCIAL_YEAR)).isEqualTo(ORDERS);
     assertThat(reconciliation.problems()).isEmpty();
   }
 

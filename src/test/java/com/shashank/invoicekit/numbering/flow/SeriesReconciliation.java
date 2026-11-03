@@ -77,4 +77,11 @@ class SeriesReconciliation {
             });
     return lastNumbers;
   }
+
+  /** How many numbers one business unit issued in a year, across all its shards. */
+  long issuedCount(TestBusinessUnit businessUnit, FinancialYear financialYear) {
+    return lastNumbersByShard(businessUnit, financialYear).values().stream()
+        .mapToLong(Long::longValue)
+        .sum();
+  }
 }

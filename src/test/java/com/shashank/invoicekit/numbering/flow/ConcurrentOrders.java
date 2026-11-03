@@ -21,20 +21,30 @@ import org.slf4j.LoggerFactory;
  * Places dummy orders from many threads at once, like a busy consumer group handling a burst.
  *
  * <p>Under load an order can find its series locked past the lock timeout and fail with {@link
- * SeriesBusyException}. Kafka would redeliver it, so here it is retried a few times and counted.
+ * SeriesBusyException}. Kafka would redeliver it, so here it is retried up to a limit and counted.
  */
 final class ConcurrentOrders {
 
   private static final Logger log = LoggerFactory.getLogger(ConcurrentOrders.class);
 
-  /** Tries per order before a busy series fails the test. */
-  private static final int MAX_TRIES = 5;
+  /** Tries per order before a busy series fails the test, unless the test sets its own limit. */
+  private static final int DEFAULT_MAX_TRIES = 5;
 
   private final DummyOrders dummyOrders;
+  private final int maxTries;
   private final AtomicInteger busyRetries = new AtomicInteger();
 
   ConcurrentOrders(DummyOrders dummyOrders) {
+    this(dummyOrders, DEFAULT_MAX_TRIES);
+  }
+
+  /**
+   * Places orders, trying each up to {@code maxTries} times while its series is busy. A limit of 1
+   * never retries, so any busy series fails the test.
+   */
+  ConcurrentOrders(DummyOrders dummyOrders, int maxTries) {
     this.dummyOrders = dummyOrders;
+    this.maxTries = maxTries;
   }
 
   /**
@@ -66,17 +76,22 @@ final class ConcurrentOrders {
     return numbers;
   }
 
+  /** How many times an order was tried again because its series was busy. */
+  int busyRetries() {
+    return busyRetries.get();
+  }
+
   private List<String> placeInTurn(int orders, Supplier<DummyOrder> nextOrder) {
     return Stream.generate(nextOrder).limit(orders).map(this::placeRetryingBusy).toList();
   }
 
-  /** Places the order, trying again while its series is busy, up to {@link #MAX_TRIES} times. */
+  /** Places the order, trying again while its series is busy, up to {@code maxTries} times. */
   private String placeRetryingBusy(DummyOrder order) {
     for (int attempt = 1; ; attempt++) {
       try {
         return dummyOrders.place(order);
       } catch (SeriesBusyException busy) {
-        if (attempt == MAX_TRIES) {
+        if (attempt == maxTries) {
           throw busy;
         }
         busyRetries.incrementAndGet();
