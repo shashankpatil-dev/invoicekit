@@ -482,6 +482,11 @@ Design rules, enforced by `NumberingArchitectureTest`:
 | `NumberingServiceTest`, `NumberingMetricsTest` | Series choice, formatting, metrics and the one-time warning |
 | `DummyOrderNumberingTest` | 1 and 10 dummy orders on the temporary test series, through the real service and database |
 | `NumberingConcurrencyTest` | Many threads at once: no gaps, no duplicates, one invoice per repeated event, no gap after a failed transaction |
+| `NumberingFailureTest` | A connection killed before commit leaves its number for the next order. The database paused for 3 seconds under load still ends with one number per order. A full series refuses the next order and rolls it back |
+| `NumberingFrozenWorkerTest` | A worker idle mid-transaction is cut off by `idle_in_transaction_session_timeout`, and a waiting worker takes its number |
+| `NumberingBusySeriesRetryTest` | With a 2ms lock timeout, hundreds of `SeriesBusyException` retries still number every order exactly once |
+| `NumberingSmallPoolTest` | 32 threads sharing 4 connections all succeed by waiting, with no retries |
+| `NumberingEdgeCaseTest` | Redelivery after commit returns the original number. Changing 1 shard to 4 keeps old numbers and spreads new ones. Orders across 31 March and 1 April land in separate series. Independent series never affect each other |
 
 The temporary test series lives in `src/test/resources/db/testseries/`. Delete that folder to discard it.
 

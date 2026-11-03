@@ -749,7 +749,28 @@ GitHub Actions runs `./gradlew build` on every push to `main` and every pull req
 9. Multiple series test.
 10. Archive and retrieval.
 
-## 19. Open items
+## 19. Libraries
+
+Each library is added together with the code that first uses it, so nothing sits in the build unused.
+
+| Library | Use | Added with |
+|---|---|---|
+| Spring `JdbcClient` | All SQL. The statements are short, PostgreSQL-specific and order-sensitive, so they stay visible instead of going through an ORM | In use |
+| Micrometer Tracing with the OpenTelemetry bridge, OTLP exporter | One trace from intake to notification, carried in Kafka headers | Invoice module |
+| Spring Kafka `DefaultErrorHandler` | Consumer retries with backoff, then the DLQ | Invoice module |
+| Caffeine | In-process cache for adapter config and tax rates, which rarely change | Invoice module |
+| Spring Retry or Resilience4j | Retries with jitter for renderer and storage calls. Resilience4j only if a circuit breaker is needed | Render worker |
+| Debezium | Change data capture for the outbox | Phase 2 |
+
+Not used, on purpose:
+
+- **Dagger:** Spring is the dependency injection container.
+- **ShedLock:** cron jobs already claim rows with `FOR UPDATE SKIP LOCKED`.
+- **Lombok:** records cover it.
+- **A reactive stack:** blocking Spring MVC with virtual threads suits this workload.
+- **An ORM:** to be revisited if the invoice module grows to many queries. jOOQ first, then Spring Data JDBC for simple reads.
+
+## 20. Open items
 
 - Get the invoice superset reviewed by a CA.
 - Confirm the cancellation process and retention period.
