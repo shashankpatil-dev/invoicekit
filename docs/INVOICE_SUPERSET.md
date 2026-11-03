@@ -295,7 +295,7 @@ The platform saves this in `invoice.payload`, and sends it to the document engin
   "invoiceId": "018f3c1e-7b0a-7d3e-9e0a-2f4c9a6d1b11",
   "bu": "subscriptions",
   "sourceEventId": "sub-482:2026-11",
-  "invoiceNumber": "SUBA262700000142",
+  "invoiceNumber": "SUBAA26000000142",
   "invoiceDate": "2026-11-01",
   "financialYear": "2026-27",
   "supplyCategory": "DOMESTIC",
