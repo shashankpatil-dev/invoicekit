@@ -11,7 +11,7 @@
 | Module | Status |
 |---|---|
 | `documentengine` | Complete for now, with the `subscriptions` template |
-| `services/typst-renderer` | Complete for now |
+| `document-engine` | Complete for now |
 | `invoice`, `numbering`, `archive`, `adaption` | Not built yet |
 
 The document engine still needs the `international` template and a full-pipeline load test. See [Load Test Results](LOAD_TEST.md).
@@ -52,7 +52,9 @@ archive/
 adaption/<bu>/                      One adapter per BU
 resources/adaption/<bu>/invoice.typ One template per BU
 resources/db/migration/             Flyway migrations
-services/typst-renderer/            Typst rendering service
+document-engine/                    Typst rendering service
+deploy/compose/                     Docker Compose for the whole stack
+deploy/helm/<service>/              Helm chart, values.yaml plus values-<environment>.yaml
 ```
 
 Dependency rules, enforced with ArchUnit:
@@ -480,7 +482,7 @@ public record RenderedDocument(byte[] pdf) {}
 
 ### Typst renderer
 
-`services/typst-renderer` is a small Python service, using Typst 0.15.0 and gunicorn. It runs as its own container, so Typst doesn't share CPU or memory with the JVM.
+`document-engine` is a small Python service, using Typst 0.15.0 and gunicorn. It runs as its own container, so Typst doesn't share CPU or memory with the JVM.
 
 | Endpoint | Purpose |
 |---|---|
@@ -658,7 +660,7 @@ Engineering-owned settings live in `.properties` files, one file per topic. Valu
 | `resources/config/render.properties` | Typst renderer client |
 | `resources/config/jobs.properties` | Outbox and recovery cron |
 | `resources/config/notification.properties` | Mail server |
-| `services/typst-renderer/config/renderer.properties` | Renderer queue, timeouts and gunicorn |
+| `document-engine/config/renderer.properties` | Renderer queue, timeouts and gunicorn |
 
 `application.yml` only imports these files and sets worker profiles. A new topic gets its own file. Renderer values can be overridden by environment variable, so `render.max-waiting` becomes `RENDER_MAX_WAITING`. The renderer refuses to start unless `server.threads` exceeds `render.slots + render.max-waiting`.
 

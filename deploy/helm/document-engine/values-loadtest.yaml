@@ -1,0 +1,22 @@
+# Settings for the kind load test in loadtest/kind/run.sh.
+
+# The script loads the image into kind, so it is never pulled.
+image:
+  tag: loadtest
+  pullPolicy: Never
+
+# The script sets the pod count for each run, and turns autoscaling on only for the autoscaling runs.
+replicaCount: 1
+
+# Kept at the size used for the recorded results, so new runs stay comparable.
+resources:
+  requests:
+    cpu: "1"
+    memory: 2Gi
+  limits:
+    cpu: "1"
+    memory: 2Gi
+
+autoscaling:
+  enabled: false
+  minReplicas: 2

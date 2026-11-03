@@ -52,7 +52,7 @@ run_phase() {
 rm -rf "$RESULTS"
 mkdir -p "$RESULTS"
 
-docker build -q -t "$RENDERER_IMAGE" -f services/typst-renderer/Dockerfile . >/dev/null
+docker build -q -t "$RENDERER_IMAGE" -f document-engine/Dockerfile . >/dev/null
 docker network create "$NETWORK" >/dev/null
 docker run -d --name "$RENDERER" --network "$NETWORK" \
   --cpus "$CPU_LIMIT" --memory "$MEMORY_LIMIT" \

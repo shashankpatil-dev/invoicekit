@@ -10,7 +10,7 @@ final class TypstRendererFixture {
 
   static final int RENDERER_PORT = 3000;
 
-  private static final String SERVICE_PATH = "services/typst-renderer";
+  private static final String SERVICE_PATH = "document-engine";
   private static final String TEMPLATES_PATH = "src/main/resources/adaption";
 
   private TypstRendererFixture() {}

@@ -34,7 +34,7 @@ class TypstRendererOverloadTest {
   private static final int REQUESTS_ABOVE_QUEUE_LIMIT = 12;
   private static final Duration REQUESTS_ARRIVE = Duration.ofMillis(150);
 
-  /** Matches the readiness probe timeout in deploy/kind/document-engine.yaml. */
+  /** Matches the readiness probe timeout in deploy/helm/document-engine/values.yaml. */
   private static final Duration HEALTH_LIMIT = Duration.ofSeconds(3);
 
   @Container

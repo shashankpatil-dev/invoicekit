@@ -20,3 +20,8 @@ jobs:
 
       - name: Check formatting, build and test
         run: ./gradlew build
+
+      - name: Lint the document engine Helm chart
+        run: |
+          helm lint deploy/helm/document-engine
+          helm lint deploy/helm/document-engine --values deploy/helm/document-engine/values-loadtest.yaml

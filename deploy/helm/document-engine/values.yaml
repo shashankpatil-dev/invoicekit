@@ -1,0 +1,36 @@
+# Default settings for the document engine. Environment files such as values-loadtest.yaml override these.
+
+image:
+  repository: invoicekit/document-engine
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+# Pod count when autoscaling is off. Three pods hold a 100 rps peak with one pod lost.
+replicaCount: 3
+
+# Render workers per pod. Rendering is CPU-heavy, so match this to the CPU limit.
+workers: 1
+
+# Load tests peaked at 72MiB per pod, so 256Mi leaves room without waste.
+resources:
+  requests:
+    cpu: "1"
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 256Mi
+
+service:
+  port: 3000
+
+# Matches HEALTH_LIMIT in TypstRendererOverloadTest, which proves /health answers within it under overload.
+readinessProbe:
+  periodSeconds: 2
+  timeoutSeconds: 3
+
+# Adds pods when average CPU passes the target. The autoscaler takes minutes to react, so minReplicas must cover a burst.
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70

@@ -77,11 +77,11 @@ services:
       - "1025:1025"
       - "8025:8025"
 
-  # Turns invoice payloads into PDFs. See services/typst-renderer.
-  typst-renderer:
+  # Turns invoice payloads into PDFs. See document-engine/.
+  document-engine:
     build:
       context: ../..
-      dockerfile: services/typst-renderer/Dockerfile
+      dockerfile: document-engine/Dockerfile
     environment:
       # Number of render workers. Match this to the CPUs given to the container.
       WEB_CONCURRENCY: 2

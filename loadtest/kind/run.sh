@@ -1,8 +1,8 @@
 #!/bin/sh
 # Finds how many 1 CPU, 2GiB document engine pods it takes to hold 100 rps on Kubernetes.
 #
-# Run it from the repo root: loadtest/k6/run-kind.sh
-# It needs Docker, kind and kubectl, and takes about 35 minutes. Raw results go to loadtest/results/kind.
+# Run it from the repo root: loadtest/kind/run.sh
+# It needs Docker, kind, kubectl and helm, and takes about 35 minutes. Raw results go to loadtest/results/kind.
 #
 # It tests fixed pod counts first, then lets the autoscaler choose, starting from one pod.
 # Set POD_COUNTS="1 2" to choose the pod counts, and SKIP_AUTOSCALE=1 to skip the autoscaler run.
@@ -12,7 +12,8 @@ set -eu
 
 CLUSTER=fp
 NAMESPACE=fp
-RENDERER_IMAGE=invoicekit/typst-renderer:loadtest
+RENDERER_IMAGE=invoicekit/document-engine:loadtest
+CHART=deploy/helm/document-engine
 K6_IMAGE=grafana/k6:0.57.0
 METRICS_SERVER=https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.8.0/components.yaml
 RESULTS=loadtest/results/kind
@@ -63,9 +64,20 @@ highest_memory_peak() {
   echo "$highest"
 }
 
+# Installs or updates the document engine chart. Extra arguments go to helm, such as --set flags.
+deploy_engine() {
+  helm upgrade --install document-engine "$CHART" --namespace "$NAMESPACE" --create-namespace \
+    --values "$CHART/values-loadtest.yaml" "$@" >/dev/null
+}
+
+# Waits until the given number of document engine pods are ready.
+wait_for_ready_pods() {
+  kube wait deployment document-engine --for=jsonpath='{.status.readyReplicas}'="$1" --timeout=180s >/dev/null
+}
+
 # Starts k6 as a Job and waits for it. Arguments: phase name, rate, duration.
 run_job() {
-  sed -e "s/__PHASE__/$1/g" -e "s/__RATE__/$2/g" -e "s/__DURATION__/$3/g" -e "s/__STAGES__/${STAGES:-}/g" deploy/kind/k6-job.yaml |
+  sed -e "s/__PHASE__/$1/g" -e "s/__RATE__/$2/g" -e "s/__DURATION__/$3/g" -e "s/__STAGES__/${STAGES:-}/g" loadtest/kind/k6-job.yaml |
     kubectl apply -f - >/dev/null
   kube wait --for=condition=complete --timeout=20m "job/k6-$1" >/dev/null
 }
@@ -101,7 +113,7 @@ record_timeline() {
 rm -rf "$RESULTS"
 mkdir -p "$RESULTS"
 
-kind create cluster --name "$CLUSTER" --config deploy/kind/kind-config.yaml --wait 120s
+kind create cluster --name "$CLUSTER" --config loadtest/kind/kind-config.yaml --wait 120s
 
 # The autoscaler reads CPU from metrics-server. Local kubelets use self-signed certificates.
 kubectl apply -f "$METRICS_SERVER" >/dev/null
@@ -109,18 +121,17 @@ kubectl --namespace kube-system patch deployment metrics-server --type=json \
   -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]' >/dev/null
 kubectl --namespace kube-system rollout status deployment metrics-server --timeout=120s >/dev/null
 
-docker build -q -t "$RENDERER_IMAGE" -f services/typst-renderer/Dockerfile . >/dev/null
+docker build -q -t "$RENDERER_IMAGE" -f document-engine/Dockerfile . >/dev/null
 docker pull -q "$K6_IMAGE" >/dev/null
 kind load docker-image --name "$CLUSTER" "$RENDERER_IMAGE" "$K6_IMAGE"
 
-kubectl apply -f deploy/kind/document-engine.yaml >/dev/null
+deploy_engine
 kube create configmap k6-scripts --from-file=loadtest/k6/render.js >/dev/null
 kube create configmap k6-payloads --from-file=src/test/resources/payloads/subscriptions-domestic.json >/dev/null
 
 if [ "${GRADUAL:-}" = "1" ]; then
-  kube scale deployment document-engine --replicas 2 >/dev/null
-  kube rollout status deployment document-engine --timeout=120s >/dev/null
-  kubectl apply -f deploy/kind/document-engine-hpa.yaml >/dev/null
+  deploy_engine --set autoscaling.enabled=true
+  wait_for_ready_pods 2
   record_timeline &
   TIMELINE_PID=$!
   STAGES=$GRADUAL_STAGES
@@ -144,13 +155,13 @@ if [ "${SKIP_AUTOSCALE:-}" = "1" ]; then
   exit 0
 fi
 
-kube delete deployment document-engine >/dev/null
+helm uninstall document-engine --namespace "$NAMESPACE" >/dev/null
 kube wait --for=delete pod -l app=document-engine --timeout=120s >/dev/null 2>&1 || true
-kubectl apply -f deploy/kind/document-engine.yaml >/dev/null
+deploy_engine
 kube rollout status deployment document-engine --timeout=120s >/dev/null
 warm_up autoscale
 
-kubectl apply -f deploy/kind/document-engine-hpa.yaml >/dev/null
+deploy_engine --set autoscaling.enabled=true
 record_timeline &
 TIMELINE_PID=$!
 

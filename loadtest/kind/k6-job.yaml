@@ -1,4 +1,4 @@
-# One k6 load test phase. run-kind.sh fills in the __PLACEHOLDER__ values.
+# One k6 load test phase. loadtest/kind/run.sh fills in the __PLACEHOLDER__ values.
 apiVersion: batch/v1
 kind: Job
 metadata:

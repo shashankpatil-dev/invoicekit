@@ -20,7 +20,7 @@ GitHub Actions runs `./gradlew build` on every push to `main` and every pull req
 ## Local infrastructure
 
 ```bash
-cd deploy/local
+cd deploy/compose
 docker compose up -d
 ```
 
@@ -32,7 +32,7 @@ docker compose up -d
 | fake-gcs-server | `localhost:4443` |
 | Mailpit SMTP | `localhost:1025` |
 | Mailpit UI | http://localhost:8025 |
-| Typst renderer | `localhost:3002` |
+| Document engine | `localhost:3002` |
 | Prometheus | http://localhost:9091 |
 | Grafana | http://localhost:3001 |
 
@@ -52,9 +52,9 @@ src/main/resources/
   adaption/          One template folder per BU
   db/migration/      Flyway migrations
   config/            Engineering settings, one file per topic
-services/typst-renderer/  Typst rendering service
-deploy/local/        Docker Compose and local config
-deploy/kind/         Kubernetes manifests for local load tests
-loadtest/k6/         Load tests
-failuretest/         Failure test scenarios
+document-engine/     Typst rendering service, built as its own image
+deploy/compose/      Docker Compose for the whole stack on one machine
+deploy/helm/         One Helm chart per service, with values files per environment
+loadtest/k6/         k6 load test script and Docker runner
+loadtest/kind/       kind cluster runner for Kubernetes load tests
 ```

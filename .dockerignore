@@ -1,4 +1,4 @@
-# Ignore everything by default, then allow only what the Typst renderer image needs.
+# Ignore everything by default, then allow only what the document engine image needs.
 *
-!services/typst-renderer
+!document-engine
 !src/main/resources/adaption

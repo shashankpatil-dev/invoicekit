@@ -1,0 +1,6 @@
+apiVersion: v2
+name: document-engine
+description: Typst rendering service that turns invoice payloads into PDFs.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

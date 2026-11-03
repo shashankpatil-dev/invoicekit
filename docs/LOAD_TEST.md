@@ -4,7 +4,7 @@
 |---|---|
 | Status | Document engine only |
 | Date | 2026-11-01 |
-| Scripts | `loadtest/k6/run-kind.sh`, `loadtest/k6/run.sh` |
+| Scripts | `loadtest/kind/run.sh`, `loadtest/k6/run.sh` |
 
 ## Result
 
@@ -89,9 +89,9 @@ This run came after the overload changes in the renderer: threads, a render queu
 ## How to run
 
 ```bash
-GRADUAL=1 loadtest/k6/run-kind.sh
-loadtest/k6/run-kind.sh
+GRADUAL=1 loadtest/kind/run.sh
+loadtest/kind/run.sh
 PEAK_ONLY=1 loadtest/k6/run.sh
 ```
 
-Both scripts need Docker. `run-kind.sh` also needs `kind` and `kubectl`. They remove their containers, cluster and images when they finish.
+Both scripts need Docker. `loadtest/kind/run.sh` also needs `kind`, `kubectl` and `helm`, and installs the document engine with its Helm chart in `deploy/helm/document-engine`. They remove their containers, cluster and images when they finish.
