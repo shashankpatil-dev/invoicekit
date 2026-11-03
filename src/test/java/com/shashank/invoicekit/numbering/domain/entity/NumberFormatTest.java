@@ -102,8 +102,8 @@ class NumberFormatTest {
         "{seq:-1}            | unknown token {seq:-1}; use {shard}, {fy} or {seq:N}",
         "{seq:0}             | {seq:N} needs N from 1 to 16, but was 0",
         "{seq:17}            | {seq:N} needs N from 1 to 16, but was 17",
-        "SUB{shard}{fy}      | it needs exactly one {seq:N}",
-        "{seq:3}{seq:3}      | it needs exactly one {seq:N}",
+        "SUB{shard}{fy}      | it needs a {seq:N}",
+        "{seq:3}{seq:3}      | {seq:N} can appear only once",
         "{shard}{shard}{seq:3} | {shard} can appear only once",
         "{fy}{fy}{seq:3}     | {fy} can appear only once"
       })
