@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Design agreed, not built |
+| Status | Built, final load test pending |
 | Date | 2026-11-04 |
 | Related | [LLD](LLD.md), [HLD](HLD.md), [Invoice Superset](INVOICE_SUPERSET.md) |
 
@@ -70,29 +70,29 @@ entity: ACME_MH (GSTIN 27AAAAA0000A1Z5)
 +-- BU: subscriptions
 |   |
 |   +-- FY 2026-27
-|   |   +-- shard AA  ->  SUBAA26000000001, ...02, ...03
-|   |   +-- shard AB  ->  SUBAB26000000001, ...02, ...03
+|   |   +-- shard A  ->  SUBA260000000001, ...02, ...03
+|   |   +-- shard B  ->  SUBB260000000001, ...02, ...03
 |   |
 |   +-- FY 2027-28
-|       +-- shard AA  ->  SUBAA27000000001, ...
-|       +-- shard AB  ->  SUBAB27000000001, ...
+|       +-- shard A  ->  SUBA270000000001, ...
+|       +-- shard B  ->  SUBB270000000001, ...
 |
 +-- BU: enterprise  (1 shard)
     +-- FY 2026-27
-        +-- shard AA  ->  ENTAA26000000001, ...
+        +-- shard A  ->  ENTA260000000001, ...
 
 entity: ACME_KA (GSTIN 29AAAAA0000A1Z3)
 +-- BU: subscriptions
     +-- FY 2026-27
-        +-- shard AA  ->  SUBAA26000000001, ...
+        +-- shard A  ->  SUBA260000000001, ...
 ```
 
 Rules:
 
-- **Entity** is one GSTIN. Uniqueness is required per GSTIN, so `ACME_MH` and `ACME_KA` may both issue `SUBAA26000000001`. The state therefore doesn't need to appear in the number.
+- **Entity** is one GSTIN. Uniqueness is required per GSTIN, so `ACME_MH` and `ACME_KA` may both issue `SUBA260000000001`. The state therefore doesn't need to appear in the number.
 - **BU prefix** must be unique within an entity, because BUs share the GSTIN.
-- **Financial year** runs from 1 April to 31 March, taken from `invoice_date`. Each year starts every series again at 1.
-- **Shard** is one or two letters, `A` to `Z` or `AA` to `ZZ`. Each shard is a separate series, which Rule 46 allows ("one or multiple series").
+- **Financial year** runs from 1 April to 31 March, taken from `invoice_date`. It is stored as `2026-27`, and each year starts every series again at 1.
+- **Shard** is one letter, `A` to `Z`. Each shard is a separate series, which Rule 46 allows ("one or multiple series").
 
 ## 4. Number format
 
@@ -101,68 +101,63 @@ Each BU's format lives in its adapter config. The format is a template of litera
 | Token | Output | Example |
 |---|---|---|
 | Literal text | Itself | `SUB` |
-| `{shard}` | One shard letter, up to 26 shards | `A` |
-| `{shard:2}` | Two shard letters, up to 676 shards | `AA` |
-| `{fy}` | Both years of the financial year | `2627` |
-| `{fy:start}` | Starting year of the financial year | `26` |
-| `{fy:full}` | Full financial year | `2026-27` |
-| `{seq:N}` | Sequence, zero-padded to N digits | `000000142` |
+| `{shard}` | Shard letter, up to 26 shards | `A` |
+| `{fy}` | Two-digit starting year of the financial year | `26` for 2026-27 |
+| `{seq:N}` | Sequence, zero-padded to N digits | `0000000142` |
 
-Chosen format: `SUB{shard:2}{fy:start}{seq:9}` gives `SUBAA26000000142`.
+Chosen format: `SUB{shard}{fy}{seq:10}` gives `SUBA260000000142`.
 
 ```text
- S U B   A A   2 6   0 0 0 0 0 0 1 4 2
- -----   ---   ---   -----------------
- prefix  shard FY    sequence, 9 digits
- 3     + 2   + 2   + 9                    = 16 characters, the legal maximum
+ S U B   A   2 6   0 0 0 0 0 0 0 1 4 2
+ -----   -   ---   -------------------
+ prefix  |   FY    sequence, 10 digits
+         shard
+ 3     + 1 + 2   + 10                    = 16 characters, the legal maximum
 ```
 
-`SUB{shard:2}{fy:start}{seq:11}` would be 18 characters, which breaks the 16-character limit. Getting 11 digits needs 5 characters for everything else, such as a 1-letter prefix: `S{shard:2}{fy:start}{seq:11}`.
+### Validation
 
-### Startup validation
-
-The service refuses to start if any active format breaks these rules:
+`NumberFormat.parse` rejects a template, with the reason, if it breaks any rule:
 
 | Check | Why |
 |---|---|
-| Longest possible output is 16 characters or less | Rule 46 limit |
+| Longest output is 16 characters or less | Rule 46 limit |
 | Only letters, digits, `-` and `/` | Rule 46 characters |
-| Exactly one `{seq:N}` | Every number needs a sequence |
-| `{shard}` or `{shard:2}` present when shards is over 1 | Otherwise two shards produce the same number |
-| Shard count fits the shard token: 26 for one letter, 676 for two | One code per shard |
-| Prefix unique per entity across BUs | Otherwise two BUs collide under one GSTIN |
+| Exactly one `{seq:N}`, with N from 1 to 16 | Every number needs a sequence |
+| `{shard}` and `{fy}` at most once each | A repeated token is a mistake |
+
+Other checks:
+
+- `NumberingRule` refuses more than 1 shard unless the format uses `{shard}`, because otherwise two shards would produce the same numbers.
+- `NumberFormat.format` refuses a sequence that doesn't fit, so a number is never cut short.
+- `NumberFormat.leadingLiteral()` gives the prefix, such as `SUB`. The adapter registry, when built, will use it at startup to check that two BUs under one entity don't share a prefix.
 
 ### Capacity
 
 A series has two separate limits:
 
-| Limit | What sets it | For `{seq:9}` |
+| Limit | What sets it | For `{seq:10}` |
 |---|---|---|
-| **Space** | Digits in `{seq:N}`, renewed every financial year | 999,999,999 numbers per series per year |
-| **Speed** | How long the counter row is locked per number | Not measured yet. Expected in the hundreds per second |
+| **Space** | Digits in `{seq:N}`, renewed every financial year | 9,999,999,999 numbers per series per year |
+| **Speed** | How long the counter row is locked per number | 827 numbers/sec measured on one local series, see section 10 |
 
-Growth plan: one BU and entity at an average of 10 rps, growing 40% a year, with the chosen format:
+Growth plan: one BU and entity growing from 10 lakh to 1 crore orders a day over 10 years, about 29% a year:
 
-| Year | Average rps | Invoices that year | Shards needed for space | Average rps per shard |
+| Year | Orders a day | Invoices that year | Average rps | Shards needed for space |
 |---|---|---|---|---|
-| 1 | 10 | 0.32B | 1 | 10 |
-| 4 | 27 | 0.87B | 1 | 27 |
-| 5 | 38 | 1.21B | 2 | 19 |
-| 8 | 105 | 3.32B | 4 | 26 |
-| 10 | 207 | 6.52B | 7 | 30 |
-| 14 | 794 | 25.0B | 26 | 31 |
-| 20 | 5,976 | 188B | 189 | 32 |
-| 23 | 16,399 | 517B | 518 | 32 |
-| **24** | **22,959** | **724B** | **725, over the 676 limit** | 32 |
+| 1 | 1.0M | 0.37B | 12 | 1 |
+| 5 | 2.8M | 1.0B | 32 | 1 |
+| 10 | 10.0M | 3.65B | 116 | 1 |
+| 15 | 35.9M | 13.1B | 416 | 2 |
+| 20 | 129M | 47.1B | 1,495 | 5 |
 
-- **This format lasts 23 years** at that growth before two shard letters run out.
-- **Space, not speed, decides the shard count.** Each shard only averages about 30 rps, well below what one counter row should handle.
-- **Peaks matter for speed.** In years 1 to 4, one series takes all traffic, including bursts like 100 rps. The load test must confirm one counter row handles the expected peak, and adding shards earlier is the fix if it doesn't.
+- **One series has enough space for the whole 10-year plan.** 26 shards hold about 260B numbers a year, which lasts far beyond it.
+- **Speed decides when to add shards.** At year 10 the average is 116 rps, and peaks may be several times that. Add shards when the measured peak gets close to the counter row's limit, not when space runs out.
 
 Running out must never silently wrap or reuse numbers:
 
-- The allocation SQL only increments while `last_no` is below the maximum, so it can't produce a 10-digit sequence.
-- An alert fires when any series passes 80% of its yearly capacity.
+- The allocation SQL only increments while `last_no` is below the maximum, and `NumberFormat.format` refuses a sequence that doesn't fit.
+- `numbering.series.utilisation` tracks how full each series is, and a warning is logged the first time a series passes 80%.
 - The fix is to add shards in config. New events spread into the new series.
 
 ## 5. Choosing a shard
@@ -170,108 +165,67 @@ Running out must never silently wrap or reuse numbers:
 The shard comes from the event ID:
 
 ```text
-shard = code( hash(source_event_id) mod shards )
+shard = letter( floorMod(sourceEventId.hashCode(), shards) )
 
-evt-101  -> hash -> 7  mod 2 = 1 -> AB
-evt-102  -> hash -> 4  mod 2 = 0 -> AA
-evt-103  -> hash -> 11 mod 2 = 1 -> AB
+evt-101  -> hash mod 2 = 1 -> B
+evt-102  -> hash mod 2 = 0 -> A
+evt-103  -> hash mod 2 = 1 -> B
 ```
 
 - **Even spread:** events split evenly across shards, so their counters share the load.
-- **Deterministic:** the same event always maps to the same shard, which keeps tests and investigations simple.
+- **Deterministic:** `String.hashCode` is fixed by the Java language, so the same event always maps to the same shard on every JVM.
 - **Safe to change:** a duplicate of an already numbered event is caught by the invoice's unique key before a shard is chosen, so changing the shard count never renumbers anything.
 - **Increasing shards:** new series start at 1 and existing ones continue.
 - **Decreasing shards:** a removed shard's series stops. Its numbers stay contiguous, so it has no gap.
-- **Who changes it:** an operator, in config, after an alert. Each new series appears in GST reporting, so it's never automatic.
+- **Who changes it:** an operator, in `bu_entity.number_shards`, after a warning or a load test. Each new series appears in GST reporting, so it's never automatic.
 
-Shard count is set per BU and entity, so a BU can have more shards in a busy state only.
+## 6. The allocation transaction
 
-## 6. The allocation SQL
-
-PostgreSQL does the hard work, so the SQL is written to be correct under every race and to hold the counter lock for the shortest time.
+Numbering owns one statement, the counter increment. The invoice module owns the statements around it. Keeping that boundary costs one extra statement while the counter is locked, which is small next to keeping the modules separate.
 
 ### Order of work
 
 ```text
- Worker                                   PostgreSQL
-   |                                          |
-   | BEGIN  (READ COMMITTED)                  |
-   | SET LOCAL lock_timeout, statement_timeout|
-   |----------------------------------------->|
-   |                                          |
-   | 1. INSERT invoice, no number yet         |
-   |    ON CONFLICT (bu, source_event_id)     |
-   |    DO NOTHING                            |
-   |----------------------------------------->|
-   |                 0 rows: duplicate.       |
-   |                 ROLLBACK and stop.       |
-   |                 Counter never touched.   |
-   |                                          |
-   | 2. INSERT invoice_audit                  |
-   |----------------------------------------->|
-   |                                          |
-   | 3. ONE statement:                        |
-   |    increment counter (lock taken)        |
-   |    set number on invoice                 |
-   |    insert outbox row                     |
-   |----------------------------------------->|
-   |                 0 rows: series is full.  |
-   |                 ROLLBACK, raise alert.   |
-   |                                          |
-   | COMMIT                                   |
-   |----------------------------------------->|
-   |                 lock released            |
+ Invoice module                Numbering module              PostgreSQL
+      |                              |                            |
+      | BEGIN (READ COMMITTED)       |                            |
+      |---------------------------------------------------------->|
+      | 1. INSERT invoice, no number |                            |
+      |    ON CONFLICT (bu, source_event_id) DO NOTHING           |
+      |---------------------------------------------------------->|
+      |                0 rows: duplicate. ROLLBACK and stop.      |
+      |                The counter is never touched.              |
+      |                              |                            |
+      | 2. assign(request) --------->|                            |
+      |                              | SET LOCAL lock_timeout,    |
+      |                              | statement_timeout          |
+      |                              | upsert counter (lock taken)|
+      |                              |--------------------------->|
+      |                              |     0 rows: series full    |
+      |<----- InvoiceNumber ---------|                            |
+      |                              |                            |
+      | 3. UPDATE invoice: shard, sequence, number                |
+      |    and INSERT outbox, in one statement                    |
+      |---------------------------------------------------------->|
+      | COMMIT                                      lock released |
+      |---------------------------------------------------------->|
 ```
 
-The counter is the last thing touched, and everything after it happens in the same statement. So the lock is held for one statement plus the commit, with no extra network round trips while other workers wait.
+### The counter statement
 
-### Statements
+`CounterLockSequenceCounter` runs these, inside the caller's transaction:
 
 ```sql
-BEGIN;
+SET LOCAL lock_timeout = '2000ms';
+SET LOCAL statement_timeout = '5000ms';
 
-SET LOCAL lock_timeout = '2s';
-SET LOCAL statement_timeout = '5s';
-
-INSERT INTO invoice (id, bu, entity_code, source_event_id, financial_year,
-                     invoice_date, contract_version, payload, status)
-VALUES (:invoiceId, :bu, :entityCode, :sourceEventId, :financialYear,
-        :invoiceDate, :contractVersion, :payload, 'NUMBERED')
-ON CONFLICT (bu, source_event_id) DO NOTHING
-RETURNING id;
-
-INSERT INTO invoice_audit (invoice_id, to_status, actor)
-VALUES (:invoiceId, 'NUMBERED', 'intake');
-
-WITH counter AS (
-  INSERT INTO invoice_counter AS c (entity_code, bu, financial_year, shard, last_no)
-  VALUES (:entityCode, :bu, :financialYear, :shard, 1)
-  ON CONFLICT (entity_code, bu, financial_year, shard)
-  DO UPDATE SET last_no = c.last_no + 1
-  WHERE c.last_no < :maxSequence
-  RETURNING last_no
-),
-numbered AS (
-  UPDATE invoice AS i
-  SET shard          = :shard,
-      sequence_no    = counter.last_no,
-      invoice_number = :prefix || lpad(counter.last_no::text, :sequenceWidth, '0')
-  FROM counter
-  WHERE i.id = :invoiceId
-  RETURNING i.id, i.invoice_number
-)
-INSERT INTO outbox (id, invoice_id, topic, message_key, body)
-SELECT :outboxId, numbered.id, 'invoice.render', numbered.id::text,
-       jsonb_set(:renderMessage, '{invoiceNumber}', to_jsonb(numbered.invoice_number))
-FROM numbered
-RETURNING body ->> 'invoiceNumber' AS invoice_number;
-
-COMMIT;
+INSERT INTO invoice_counter AS c (entity_code, bu, financial_year, shard, last_no)
+VALUES (:entityCode, :businessUnit, :financialYear, :shard, 1)
+ON CONFLICT (entity_code, bu, financial_year, shard)
+DO UPDATE SET last_no = c.last_no + 1
+WHERE c.last_no < :maxSequence
+RETURNING last_no;
 ```
-
-- `:prefix` is everything before the sequence, built by the format code, such as `SUBAA26`.
-- `:maxSequence` is `10^width - 1`, such as 999,999,999.
-- The saved invoice payload gets its `invoiceNumber` the same way, in the `numbered` step.
 
 ### Why each part is there
 
@@ -280,23 +234,43 @@ COMMIT;
 | `READ COMMITTED` | PostgreSQL's default. `ON CONFLICT DO UPDATE` guarantees an insert or an update even under high concurrency, and always updates the latest committed counter value. Stricter levels would add retries without adding safety |
 | Invoice insert first, `ON CONFLICT DO NOTHING` | A duplicate event stops before the counter. A second worker with the same event waits for the first to commit, then inserts 0 rows |
 | Counter upsert | The first invoice of a new series creates the row with 1. Two workers creating it at once are handled by the upsert |
-| `WHERE c.last_no < :maxSequence` | A full series isn't incremented. PostgreSQL still locks the row but returns nothing, so the statement returns 0 rows and the code raises `SeriesExhaustedException`. Without it, `lpad` would cut a 10-digit number down to 9 and repeat numbers |
-| Counter, number and outbox in one statement | Shortest lock time. The number is written once and copied into the outbox, so they can't disagree |
-| `SET LOCAL lock_timeout` | A worker never waits forever for a stuck counter. It fails, rolls back, and Kafka redelivers |
+| `WHERE c.last_no < :maxSequence` | A full series isn't incremented. PostgreSQL still locks the row but returns nothing, and the adapter throws `SeriesExhaustedException` |
+| Counter touched late, then one statement for the number and outbox | The lock is held for two statements plus the commit |
+| `SET LOCAL lock_timeout` | A worker never waits forever for a stuck counter. It fails with `SeriesBusyException`, rolls back, and Kafka redelivers |
 | `SET LOCAL statement_timeout` | A slow statement can't hold locks indefinitely |
-| One counter row per transaction | Every transaction takes locks in the same order: invoice key, then counter. So they can't deadlock |
-| Required caller transaction | The numbering service runs only inside an existing transaction (Spring `MANDATORY`), so a number can never commit alone |
+| One counter row per transaction | Every transaction locks the invoice key and then one counter row, always in that order, so they can't deadlock |
+| `@Transactional(propagation = MANDATORY)` on `NumberingService.assign` | Numbering refuses to run without the caller's transaction, so a number can never commit alone |
+
+### Detecting timeouts
+
+Spring reports PostgreSQL's errors inconsistently: a lock timeout (SQL state `55P03`) arrives as an uncategorised error, and a statement timeout (`57014`) as `QueryTimeoutException`. The adapter therefore checks the SQL state itself, turns both into `SeriesBusyException`, and lets every other database error through unchanged.
 
 ### Database settings
 
-| Setting | Value | Why |
-|---|---|---|
-| `idle_in_transaction_session_timeout` on the app role | `30s` | A worker that freezes mid-transaction, for example in a long garbage collection pause, is cut off and its locks released |
-| Connection pool size | Bounded, set from load tests | A flood can't open more connections than the database can serve |
-| Synchronous replication in HA setups | On | A failover can't lose a committed number. See section 8 |
-| `transaction_timeout` | Not used yet | Needs PostgreSQL 17. The local stack runs 16.4 |
+| Setting | Where | Value | Why |
+|---|---|---|---|
+| `lock_timeout` | `numbering.properties` | `2s` | Longest wait for a busy counter |
+| `statement_timeout` | `numbering.properties` | `5s` | Longest statement in a numbering transaction |
+| `idle_in_transaction_session_timeout` | `database.properties`, set on every pooled connection | `30s` | A worker that freezes mid-transaction is cut off and its locks released |
+| `fillfactor` on `invoice_counter` | Schema | `50` | Counter rows are updated constantly. Free space lets PostgreSQL keep new row versions in the same page (HOT updates), so the table doesn't bloat |
+| Connection pool size | Spring settings | Set from load tests | A flood can't open more connections than the database can serve, and a measured cap per series keeps lock queues short |
 
-Per the PostgreSQL docs, `lock_timeout` and `statement_timeout` are set per transaction or per role, not in `postgresql.conf`, because a global value would affect every session.
+`NumberingProperties` refuses timeouts below 1ms, because PostgreSQL treats `0` as no timeout at all. Per the PostgreSQL docs, these timeouts belong per transaction or per role, not in `postgresql.conf`, because a global value affects every session.
+
+### Schema constraints
+
+The database enforces the rules as well, as the last line of defence:
+
+| Constraint | Rule |
+|---|---|
+| `invoice_series_sequence_unique` | One sequence per series |
+| `invoice_number_unique` | One number per GSTIN per financial year |
+| `invoice_number_format` | At most 16 characters, only letters, digits, `-` and `/` |
+| `invoice_shard_format` | Shard is one capital letter |
+| `invoice_sequence_positive` | Sequence starts at 1 |
+| `invoice_financial_year_format` | Year looks like `2026-27` |
+| `invoice_numbered_together` | Shard, sequence and number are all set or all empty |
+| `bu_entity_number_shards_range` | 1 to 26 shards |
 
 ## 7. Race scenarios
 
@@ -305,11 +279,11 @@ Per the PostgreSQL docs, `lock_timeout` and `statement_timeout` are set per tran
 ```text
 time --------------------------------------------------------------->
 
-Worker A  INSERT ok   counter: 141 -> 142   COMMIT
-                            |                 |
-                            | lock held       | lock released
-                            v                 v
-Worker B  INSERT ok   counter: waits .........  142 -> 143   COMMIT
+Worker A  INSERT ok   counter: 141 -> 142   update + outbox   COMMIT
+                            |                                   |
+                            | lock held                         | released
+                            v                                   v
+Worker B  INSERT ok   counter: waits ............................  142 -> 143
 
 Result: A = 142, B = 143. Unique, no gap, in commit order.
 ```
@@ -329,8 +303,8 @@ Result: one invoice. Worker B never touched the counter.
 ### Two events in different shards
 
 ```text
-Worker A  shard AA counter: 141 -> 142   COMMIT
-Worker B  shard AB counter:  88 ->  89   COMMIT     (no waiting)
+Worker A  shard A counter: 141 -> 142   COMMIT
+Worker B  shard B counter:  88 ->  89   COMMIT     (no waiting)
 
 Result: both run in parallel. This is how shards add throughput.
 ```
@@ -346,8 +320,8 @@ PostgreSQL writes every change to its write-ahead log (WAL) and only treats it a
 | Database crash before commit | Recovery replays only committed work | Same |
 | Commit succeeded, but the reply was lost | Worker treats it as a failure and Kafka redelivers. Step 1 finds the invoice and stops | One number, never two |
 | Commit succeeded, worker crashed before the Kafka ack | Kafka redelivers. Step 1 finds the invoice and stops | Same |
-| Failover to a replica that missed the last commit | The invoice and its number disappear together | Series stays consistent, but a number may already have reached Kafka and be reused. **Synchronous replication prevents this** |
-| Series full | Allocation returns 0 rows and rolls back. Alert fires | No number issued. Fixed by adding shards |
+| Failover in Cloud SQL high availability | Google documents that writes reach both zones' disks "before a transaction is reported as committed" ([Cloud SQL HA](https://docs.cloud.google.com/sql/docs/postgres/high-availability)) | A committed number survives the failover |
+| Series full | Counter returns 0 rows, `SeriesExhaustedException`, rollback | No number issued. Fixed by adding shards |
 
 ### Wider system failures
 
@@ -367,14 +341,14 @@ All strategies sit behind one port, so they can be swapped and compared.
 
 ```java
 public interface SequenceCounter {
-    long next(SeriesKey series);
+    long next(SeriesKey series, long maxSequence);
 }
 ```
 
 | Strategy | How | Order | Status |
 |---|---|---|---|
-| **Counter lock** | One row per series, locked by the increment | Strict | Default |
-| Pool with `SKIP LOCKED` | Pre-created numbers, each worker claims the lowest free one | Can be out of order after a rollback | Comparison only |
+| **Counter lock** | One row per series, locked by the increment | Strict | Built: `CounterLockSequenceCounter` |
+| Pool with `SKIP LOCKED` | Pre-created numbers, each worker claims the lowest free one | Can be out of order after a rollback | Comparison only, not built |
 | Batch allocation | One consumer per series numbers N events in one transaction | Strict | Future, only if one series needs it |
 
 ### Counter lock
@@ -383,17 +357,15 @@ public interface SequenceCounter {
               invoice_counter
            +--------------------+
 Worker 1 ->|  ACME_MH | SUB     |
-Worker 2 ->|  2026-27 | AA      |   one row, one writer at a time
+Worker 2 ->|  2026-27 | A       |   one row, one writer at a time
 Worker 3 ->|  last_no = 142     |
            +--------------------+
 ```
 
-Throughput per series is limited by how fast one transaction commits. Shards multiply it.
-
 ### Pool with `SKIP LOCKED`
 
 ```text
-            number_pool for ACME_MH / SUB / 2026-27 / AA
+            number_pool for ACME_MH / SUB / 2026-27 / A
            +-----+-----+-----+-----+-----+-----+
            | 142 | 143 | 144 | 145 | 146 | ... |
            +-----+-----+-----+-----+-----+-----+
@@ -404,9 +376,28 @@ Worker 3 ----------------^
 Refill job: when free numbers drop below a threshold, add the next block.
 ```
 
-It has no single busy row, and a rollback releases the number back to the pool. The catch is ordering: if the worker holding 142 rolls back after 143 commits, 142 goes to a later invoice. It also adds a refill job and more writes. It's kept only to measure against the counter lock, and isn't used in production unless out-of-order numbers are confirmed acceptable.
+It has no single busy row, and a rollback releases the number back to the pool. The catch is ordering: if the worker holding 142 rolls back after 143 commits, 142 goes to a later invoice. It also adds a refill job and more writes. It isn't used unless out-of-order numbers are confirmed acceptable.
 
-## 10. Scaling path
+## 10. Scaling and measured speed
+
+### Measured speed of one counter row
+
+Measured with `pgbench` on PostgreSQL 16.4 in Docker with 2 CPUs on one laptop. Each transaction inserts an invoice row and increments the counter, as the real flow does.
+
+| Setup | Concurrent workers | Numbers per second | Average latency |
+|---|---|---|---|
+| 1 series | 8 | 827 | 9.7ms |
+| 1 series | 32 | 420 | 76ms |
+| 4 shards | 8 | 1,373 | 5.8ms |
+| 4 shards | 32 | 874 | 37ms |
+
+What this shows:
+
+- **More workers on one series make it slower.** Going from 8 to 32 workers halves throughput, because waiters pile up behind the row lock. Concurrency per series must stay capped, and the connection pool and consumer threads are the cap.
+- **Shards multiply throughput,** because each has its own row and its own queue.
+- **These are local numbers.** A real database adds network time to each lock hold. The full load test will measure the real flow.
+
+### Scaling path
 
 ```text
  Load on one BU + entity
@@ -423,90 +414,78 @@ Each step keeps every guarantee in section 1.
 
 | Pressure | Signal | Alert |
 |---|---|---|
-| Speed: too many writers on one series | `numbering_commit_duration_seconds`, and PostgreSQL lock waits in `pg_stat_activity` | p95 above 20ms |
-| Space: the series is filling up | `numbering_series_utilisation` | Above 0.8 |
+| Speed: too many writers on one series | `numbering.allocation` timer, and PostgreSQL lock waits in `pg_stat_activity` | p95 above 20ms |
+| Space: the series is filling up | `numbering.series.utilisation`, plus a warning log at 0.8 | Above 0.8 |
 | Backlog: work arriving faster than it's done | Kafka consumer lag on `invoice.requested` | Still growing after 5 minutes |
 
 ## 11. Industry comparison
 
 | System | Approach | Gaps | Order | Lesson for us |
 |---|---|---|---|---|
-| PostgreSQL community | Counter table with a row lock, because sequences are never rolled back ([mailing list](https://postgrespro.com/list/thread-id/1436372), [AppMaster](https://appmaster.io/blog/concurrency-safe-invoice-numbering), [Elixir Forum](https://forum.elixirforum.com/t/how-to-ensure-a-gapless-auto-incremental-id-field-when-using-postgresql/26340)) | None | Strict | Same core as ours. The usual warning is lock contention, which we handle with a short lock window and shards |
+| PostgreSQL community | Counter table with a row lock, because sequences are never rolled back ([mailing list](https://postgrespro.com/list/thread-id/1436372), [AppMaster](https://appmaster.io/blog/concurrency-safe-invoice-numbering), [Elixir Forum](https://forum.elixirforum.com/t/how-to-ensure-a-gapless-auto-incremental-id-field-when-using-postgresql/26340)) | None | Strict | Same core as ours. The usual warning is lock contention, which we handle with a short lock window, a concurrency cap and shards |
 | SAP | Number ranges. Buffering gives speed but leaves gaps, so gapless billing turns buffering off and accepts lock waits on the range table `NRIV` ([SAP blog](https://blogs.sap.com/t5/technology-blogs-by-sap/buffering-number-ranges-and-legal-framework/ba-p/12953573), [SAP Insider](https://sapinsider.org/?p=14795), [SAP Q&A](https://answers.sap.com/questions/11347033/continuous-number-assignment-in-billing.html)) | None when unbuffered | Strict | Confirms that preallocated blocks break gap-free numbering. SAP also notes the rules differ by country, such as gapless in Germany but only ascending in Israel |
 | Microsoft Dynamics 365 | Continuous sequences never skip, but a cancelled number is recycled later. Preallocation keeps continuous blocks in the database ([Microsoft Learn](https://learn.microsoft.com/en-us/dynamics365/fin-ops-core/fin-ops/organization-administration/number-sequence-overview), [2023 improvement](https://learn.microsoft.com/en-us/dynamics365/release-plan/2023wave1/finance-operations/finance-operations-crossapp-capabilities/enable-continuous-number-sequence-performance-improvements)) | None | Not strict: recycled numbers come out of order | This matches our `SKIP LOCKED` pool. Microsoft advises continuous sequences only where the law requires them, such as invoices |
-| Odoo | "No gap" sequences lock the sequence row. Long transactions, like 100 invoices plus external signing in one commit, caused lock waits, so a community module switched to standard sequences that allow gaps ([OCA module](https://pypi.org/project/odoo12-addon-ir-sequence-standard-default/)) | Gaps when switched | Strict | The lock itself was fine. Holding it during slow work was the problem, which is why our lock is taken last and never held across a network call |
+| Odoo | "No gap" sequences lock the sequence row. Long transactions, like 100 invoices plus external signing in one commit, caused lock waits, so a community module switched to standard sequences that allow gaps ([OCA module](https://pypi.org/project/odoo12-addon-ir-sequence-standard-default/)) | Gaps when switched | Strict | The lock itself was fine. Holding it during slow work was the problem, which is why our lock is taken late and never held across a network call to another service |
 
 How our design compares:
 
 - **Same foundation:** a counter row inside the business transaction, which is the standard gapless approach.
-- **Stronger on contention:** the lock is taken last and released in one statement, shards split busy BUs, and timeouts cut off stuck sessions.
-- **Rejects the speed shortcuts:** SAP-style buffering and Dynamics-style recycling trade away gaps or ordering. Our pool strategy is kept only for measurement.
+- **Stronger on contention:** the lock is taken late and held briefly, shards split busy BUs, and timeouts cut off stuck sessions.
+- **Rejects the speed shortcuts:** SAP-style buffering and Dynamics-style recycling trade away gaps or ordering.
 - **Matches the PostgreSQL guarantee:** the docs state `ON CONFLICT DO UPDATE` guarantees an atomic insert or update "even under high concurrency", and that a row skipped by the `WHERE` condition "will still be locked" but not returned ([INSERT docs](https://www.postgresql.org/docs/current/sql-insert.html), [isolation docs](https://www.postgresql.org/docs/current/transaction-iso.html), [timeout settings](https://www.postgresql.org/docs/current/runtime-config-client.html)).
 
 One caution from the PostgreSQL docs: `INSERT ... ON CONFLICT` can fail with a unique violation while `CREATE INDEX CONCURRENTLY` or `REINDEX CONCURRENTLY` runs on the same unique index. Index maintenance on `invoice` and `invoice_counter` should run in a quiet window.
 
-## 12. Data model changes
-
-These change the current schema when numbering is built.
-
-| Table | Change |
-|---|---|
-| `bu_entity` | `number_shards int NOT NULL DEFAULT 1 CHECK (number_shards BETWEEN 1 AND 676)` |
-| `invoice` | `shard varchar(2)`. Unique on `(entity_code, bu, financial_year, shard, sequence_no)`. `UNIQUE (entity_code, financial_year, invoice_number)` stays as the final safety net |
-| `invoice_counter` | `shard varchar(2) NOT NULL`. Primary key becomes `(entity_code, bu, financial_year, shard)` |
-| `adapter_config` | `number_format` uses the tokens in section 4 |
-
-The project has no production data yet, so these go straight into the `V1` migration instead of an `ALTER`.
-
-## 13. Code structure
+## 12. Code structure
 
 ```text
 numbering/
   domain/entity/
-    SeriesKey            entity, BU, financial year, shard
-    FinancialYear        built from a date, April to March
-    NumberFormat         parses and validates the template, builds the prefix
-    ShardCode            shard index to letters, such as 0 -> AA
-    InvoiceNumber        series, sequence number and formatted value
+    FinancialYear          a date's financial year, April to March
+    Shard                  shard index and letter, chosen from the event ID
+    NumberFormat           a parsed template that formats numbers
+    NumberFormatParser     reads and validates a template
+    TemplatePart           sealed type: literal, {shard}, {fy}, {seq:N}, each renders itself
+    NumberingRule          format plus shard count for one BU and entity
+    SeriesKey              entity, BU, financial year, shard
+    InvoiceNumber          series, sequence and formatted value
   domain/exception/
-    SeriesExhaustedException
-  application/service/
-    NumberingService     picks the shard, allocates, formats
+    InvalidNumberFormatException, SeriesExhaustedException, SeriesBusyException
   application/port/outbound/
-    SequenceCounter
+    SequenceCounter        next number in a series
+  application/service/
+    NumberingRequest       what the invoice module asks for, and the series it maps to
+    NumberingService       assign(request), only inside the caller's transaction
+    NumberingMetrics       timer, counters, utilisation gauge and warning
   adapter/outbound/postgres/
     CounterLockSequenceCounter
+
+bootstrap/configuration/
+  NumberingConfiguration   wires the counter, metrics and service
+  NumberingProperties      timeouts and warning level, from config/numbering.properties
 ```
 
-```java
-public record NumberingRequest(
-    String entityCode,
-    String businessUnit,
-    String sourceEventId,
-    LocalDate invoiceDate,
-    NumberFormat format,
-    int shards) {}
+Design rules, enforced by `NumberingArchitectureTest`:
 
-public record InvoiceNumber(SeriesKey series, long sequenceNo, String value) {}
-```
+- The domain has no Spring, JDBC, Micrometer or Jackson code.
+- The application layer depends on the `SequenceCounter` port, never on the adapter.
+- Numbering doesn't depend on other feature modules.
 
-`NumberingService.assign(request)` returns an `InvoiceNumber`. The invoice module calls it inside its own transaction, and the domain classes have no Spring or database code.
-
-## 14. Testing
+## 13. Testing
 
 | Test | Proves |
 |---|---|
-| Format unit tests | Tokens, padding, 16-character limit, allowed characters |
-| Financial year unit tests | 31 March and 1 April land in different years |
-| Shard unit tests | Same event, same shard. Even spread. Index 0 is `AA`, 675 is `ZZ` |
-| Capacity test | A series at its maximum returns 0 rows and raises, instead of wrapping |
-| Concurrency test | 32 threads allocate in parallel. Every series is exactly 1 to N |
-| Duplicate test | The same event from many threads gets one number |
-| Rollback test | A rolled-back transaction leaves no gap |
-| Lock timeout test | A held counter row makes the next worker fail after `lock_timeout`, not hang |
-| Strategy load test | Counter lock against pool, 1 shard against several, on one busy series |
+| Domain unit tests | Tokens, padding, the 16-character limit, allowed characters, financial year boundaries, shard spread |
+| `NumberingSchemaTest` | Every constraint rejects bad data in a real PostgreSQL |
+| `CounterLockSequenceCounterTest` | Counting, independent series, exhaustion |
+| `CounterLockSequenceCounterTransactionTest` | Rollback leaves no gap, and lock and statement timeouts become `SeriesBusyException` |
+| `NumberingServiceTest`, `NumberingMetricsTest` | Series choice, formatting, metrics and the one-time warning |
+| `DummyOrderNumberingTest` | 1 and 10 dummy orders on the temporary test series, through the real service and database |
+| `NumberingConcurrencyTest` | Many threads at once: no gaps, no duplicates, one invoice per repeated event, no gap after a failed transaction |
 
-Reconciliation query, run after every concurrency and failure test:
+The temporary test series lives in `src/test/resources/db/testseries/`. Delete that folder to discard it.
+
+Reconciliation query, run after the concurrency tests:
 
 ```sql
 SELECT entity_code, bu, financial_year, shard,
@@ -521,18 +500,20 @@ HAVING count(*) <> max(sequence_no)
 
 Zero rows means no gaps and no duplicates. A second check confirms that each series' `max(sequence_no)` equals its `invoice_counter.last_no`.
 
-## 15. Observability
+## 14. Observability
 
-| Metric | Use |
-|---|---|
-| `numbering_commit_duration_seconds{bu,entity}` | Time the counter row is locked |
-| `numbering_allocations_total{bu,entity,shard}` | Spread across shards |
-| `numbering_series_utilisation{bu,entity,shard}` | `last_no` against capacity, alert at 0.8 |
-| `numbering_exhausted_total` | Must stay at 0 |
+| Metric | Tags | Use |
+|---|---|---|
+| `numbering.allocation` (timer) | `businessUnit`, `entity` | Time spent getting a number, including lock waits |
+| `numbering.allocations` (counter) | `businessUnit`, `entity`, `shard` | Spread across shards |
+| `numbering.exhausted` (counter) | `businessUnit`, `entity` | Must stay at 0 |
+| `numbering.series.utilisation` (gauge) | `businessUnit`, `entity`, `financialYear`, `shard` | How full a series is, from 0 to 1 |
 
-## 16. Open questions
+Prometheus shows these with underscores, such as `numbering_allocation_seconds`.
+
+## 15. Open questions
 
 - Each shard is a separate series in GST returns, as I understand it. Confirm how the returns list multiple series per GSTIN.
 - Confirm how to number a late invoice dated in the previous financial year. The design continues that year's series.
 - Confirm that a 2-digit starting year, such as `26` for 2026-27, is clear enough for auditors.
-- Measure one counter row's maximum rate, which decides whether early years need shards for speed.
+- Run the full load test through the invoice flow, which decides the connection pool cap and when to add shards for speed.

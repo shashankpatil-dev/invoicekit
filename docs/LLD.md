@@ -12,7 +12,8 @@
 |---|---|
 | `documentengine` | Complete for now, with the `subscriptions` template |
 | `document-engine` | Complete for now |
-| `invoice`, `numbering`, `archive`, `adaption` | Not built yet |
+| `numbering` | Complete, final load test pending. See [Numbering Design](NUMBERING.md) |
+| `invoice`, `archive`, `adaption` | Not built yet |
 
 The document engine still needs the `international` template and a full-pipeline load test. See [Load Test Results](LOAD_TEST.md).
 
@@ -105,7 +106,7 @@ The full event, payload and field rules are in [Invoice Superset](INVOICE_SUPERS
   "invoiceId": "018f3c1e-7b0a-7d3e-9e0a-2f4c9a6d1b11",
   "bu": "subscriptions",
   "sourceEventId": "sub-482:2026-11",
-  "invoiceNumber": "SUBAA26000000142",
+  "invoiceNumber": "SUBA260000000142",
   "invoiceDate": "2026-11-01",
   "payload": { }
 }
@@ -122,7 +123,7 @@ Shortcut: inline payloads fit the 1MB Kafka default. Upgrade to a database refer
   "schemaVersion": 1,
   "invoiceId": "018f3c1e-7b0a-7d3e-9e0a-2f4c9a6d1b11",
   "bu": "subscriptions",
-  "invoiceNumber": "SUBAA26000000142",
+  "invoiceNumber": "SUBA260000000142",
   "uri": "gs://invoices/subscriptions/2026/11/01/018f3c1e-7b0a-7d3e-9e0a-2f4c9a6d1b11.pdf",
   "checksum": "crc32c:ab12cd34"
 }
@@ -164,7 +165,7 @@ CREATE TABLE entity (
 CREATE TABLE bu_entity (
   bu             text NOT NULL,
   entity_code    text NOT NULL REFERENCES entity (entity_code),
-  number_shards  int NOT NULL DEFAULT 1 CHECK (number_shards BETWEEN 1 AND 676),
+  number_shards  int NOT NULL DEFAULT 1 CHECK (number_shards BETWEEN 1 AND 26),
   PRIMARY KEY (bu, entity_code)
 );
 
@@ -210,7 +211,7 @@ CREATE TABLE invoice (
   financial_year    text NOT NULL,
   invoice_date      date NOT NULL,
   invoice_number    varchar(16),
-  shard             varchar(2),
+  shard             char(1),
   sequence_no       bigint,
   contract_version  int NOT NULL,
   payload           jsonb NOT NULL,
@@ -236,7 +237,7 @@ CREATE TABLE invoice_counter (
   entity_code     text NOT NULL REFERENCES entity (entity_code),
   bu              text NOT NULL,
   financial_year  text NOT NULL,
-  shard           varchar(2) NOT NULL,
+  shard           char(1) NOT NULL,
   last_no         bigint NOT NULL,
   PRIMARY KEY (entity_code, bu, financial_year, shard)
 );
@@ -358,13 +359,12 @@ The listener retries transient errors with exponential backoff, from 200ms up to
 
 ## 7. Numbering transaction
 
-The full SQL, with the reason for every part, is in [Numbering Design](NUMBERING.md#6-the-allocation-sql). In short:
+The full design is in [Numbering Design](NUMBERING.md#6-the-allocation-transaction). Numbering owns only the counter statement. The invoice module owns the rest of the transaction:
 
 ```sql
 BEGIN;
-SET LOCAL lock_timeout = '2s';
-SET LOCAL statement_timeout = '5s';
 
+-- Invoice module: duplicates stop here, before the counter.
 INSERT INTO invoice (...) VALUES (..., 'NUMBERED')
 ON CONFLICT (bu, source_event_id) DO NOTHING
 RETURNING id;
@@ -373,29 +373,27 @@ RETURNING id;
 INSERT INTO invoice_audit (invoice_id, to_status, actor)
 VALUES (:invoiceId, 'NUMBERED', 'intake');
 
--- One statement: increment the counter, number the invoice, write the outbox row.
-WITH counter AS (
-  INSERT INTO invoice_counter AS c (entity_code, bu, financial_year, shard, last_no)
-  VALUES (:entityCode, :bu, :financialYear, :shard, 1)
-  ON CONFLICT (entity_code, bu, financial_year, shard)
-  DO UPDATE SET last_no = c.last_no + 1
-  WHERE c.last_no < :maxSequence
-  RETURNING last_no
-),
-numbered AS (
-  UPDATE invoice AS i
-  SET shard = :shard, sequence_no = counter.last_no,
-      invoice_number = :prefix || lpad(counter.last_no::text, :sequenceWidth, '0')
-  FROM counter
-  WHERE i.id = :invoiceId
-  RETURNING i.id, i.invoice_number
+-- Numbering module: NumberingService.assign, which runs CounterLockSequenceCounter.
+SET LOCAL lock_timeout = '2000ms';
+SET LOCAL statement_timeout = '5000ms';
+INSERT INTO invoice_counter AS c (entity_code, bu, financial_year, shard, last_no)
+VALUES (:entityCode, :businessUnit, :financialYear, :shard, 1)
+ON CONFLICT (entity_code, bu, financial_year, shard)
+DO UPDATE SET last_no = c.last_no + 1
+WHERE c.last_no < :maxSequence
+RETURNING last_no;
+-- 0 rows: the series is full, SeriesExhaustedException.
+
+-- Invoice module: number the invoice and write the outbox row in one statement.
+WITH numbered AS (
+  UPDATE invoice
+  SET shard = :shard, sequence_no = :sequenceNo, invoice_number = :invoiceNumber,
+      payload = jsonb_set(payload, '{invoiceNumber}', to_jsonb(:invoiceNumber::text))
+  WHERE id = :invoiceId
+  RETURNING id
 )
 INSERT INTO outbox (id, invoice_id, topic, message_key, body)
-SELECT :outboxId, numbered.id, 'invoice.render', numbered.id::text,
-       jsonb_set(:renderMessage, '{invoiceNumber}', to_jsonb(numbered.invoice_number))
-FROM numbered
-RETURNING body ->> 'invoiceNumber' AS invoice_number;
--- 0 rows: the series is full. ROLLBACK and raise SeriesExhaustedException.
+SELECT :outboxId, id, 'invoice.render', id::text, :renderMessage FROM numbered;
 
 COMMIT;
 ```
@@ -404,23 +402,24 @@ Why this order is safe:
 
 - The invoice insert comes first, so a duplicate stops at the unique key and never touches the counter.
 - A second worker with the same event waits for the first to commit, then inserts 0 rows.
-- The counter is touched last, in one statement with the number and outbox row, so its lock is held for one statement plus the commit.
+- The counter is taken late, and only one statement follows it before commit.
 - Each transaction locks one invoice key and then one counter row, always in that order, so it can't deadlock.
 - A rollback undoes the counter too, so no number is lost.
-- Timeouts stop a stuck session from blocking a series. The app role also sets `idle_in_transaction_session_timeout = 30s`.
+- `NumberingService.assign` requires an existing transaction, so a number never commits alone.
+- Timeouts stop a stuck session from blocking a series. Every pooled connection also sets `idle_in_transaction_session_timeout = 30s`.
 
 ### Series and format
 
 The full design, with diagrams, is in [Numbering Design](NUMBERING.md).
 
 - `SeriesKey` is `entity_code + bu + financial_year + shard`.
-- **Shards:** a busy BU can be split into several series, `A` to `Z` or `AA` to `ZZ`, set by `bu_entity.number_shards`. Rule 46 allows multiple series. The shard code is part of the number, so shards can never produce the same number.
+- **Shards:** a busy BU can be split into up to 26 series, `A` to `Z`, set by `bu_entity.number_shards`. Rule 46 allows multiple series. The shard letter is part of the number, so shards can never produce the same number.
 - **Choosing a shard:** `hash(source_event_id) mod number_shards`, so the same event always lands in the same shard. Changing the shard count never renumbers an invoice, because duplicates are caught before a shard is chosen.
 - **Capacity:** the `{seq:N}` width limits each series to `10^N - 1` numbers a year. Allocation fails rather than wrapping, and an alert fires at 80%. Adding shards is the fix.
 - Each BU needs its own prefix. `UNIQUE (entity_code, financial_year, invoice_number)` protects uniqueness under a shared GSTIN.
 - `financial_year` comes from `invoiceDate`, running 1 April to 31 March, and is saved on the invoice. Example: `2026-27`.
 - `entity_code` comes from the event, and is saved so a retry can't change series.
-- `number_format` is per BU, using the tokens `{shard}`, `{shard:2}`, `{fy}`, `{fy:start}`, `{fy:full}` and `{seq:N}`. The chosen format is `SUB{shard:2}{fy:start}{seq:9}`, which gives `SUBAA26000000142`. It holds 999,999,999 numbers per series per year, and up to 676 shards.
+- `number_format` is per BU, using the tokens `{shard}`, `{fy}` (two-digit starting year) and `{seq:N}`. The chosen format is `SUB{shard}{fy}{seq:10}`, which gives `SUBA260000000142`. It holds 9,999,999,999 numbers per series per year.
 - Uniqueness is required per GSTIN, and each entity is one GSTIN, so the state doesn't need to appear in the number.
 - Numbers are at most 16 characters, using only letters, digits, `-` and `/`. Startup validation rejects a format that can exceed this.
 
@@ -647,7 +646,7 @@ Example response:
 {
   "id": "018f3c1e-7b0a-7d3e-9e0a-2f4c9a6d1b11",
   "bu": "subscriptions",
-  "invoiceNumber": "SUBAA26000000142",
+  "invoiceNumber": "SUBA260000000142",
   "status": "STORED",
   "invoiceDate": "2026-11-01",
   "createdAt": "2026-11-01T10:15:30Z"
