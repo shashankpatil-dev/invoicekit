@@ -7,8 +7,8 @@ import com.shashank.invoicekit.numbering.domain.exception.SeriesExhaustedExcepti
 /**
  * Hands out the next number in a series.
  *
- * <p>It must run inside the caller's transaction, so the number commits or rolls back together
- * with the invoice that uses it. A rolled-back number is never lost, so series stay gap-free.
+ * <p>It must run inside the caller's transaction, so the number commits or rolls back together with
+ * the invoice that uses it. A rolled-back number is never lost, so series stay gap-free.
  */
 public interface SequenceCounter {
 
