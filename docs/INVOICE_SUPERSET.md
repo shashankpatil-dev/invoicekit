@@ -213,7 +213,7 @@ Fields used only by some BUs go in `attributes`. Each must be listed in `Invoice
 - The saved payload stores a snapshot of entity and tax values, so old invoices never change.
 - Tax rates are chosen by `invoiceDate`.
 - `invoiceNumber` is at most 16 characters, and uses only letters, digits, `-` and `/`.
-- The number series is `entity + bu + financialYear`.
+- The number series is `entity + bu + financialYear + shard`. See [Numbering Design](NUMBERING.md).
 - Each BU needs its own prefix, because BUs share a GSTIN and the number must stay unique for that GSTIN.
 
 ## Rounding
@@ -295,7 +295,7 @@ The platform saves this in `invoice.payload`, and sends it to the document engin
   "invoiceId": "018f3c1e-7b0a-7d3e-9e0a-2f4c9a6d1b11",
   "bu": "subscriptions",
   "sourceEventId": "sub-482:2026-11",
-  "invoiceNumber": "SUBMH2627000142",
+  "invoiceNumber": "SUBA262700000142",
   "invoiceDate": "2026-11-01",
   "financialYear": "2026-27",
   "supplyCategory": "DOMESTIC",

@@ -10,6 +10,7 @@ The document engine is complete for now. The invoice flow, numbering, archive an
 - [HLD](docs/HLD.md)
 - [LLD](docs/LLD.md)
 - [Invoice Superset](docs/INVOICE_SUPERSET.md)
+- [Numbering Design](docs/NUMBERING.md)
 - [Load Test Results](docs/LOAD_TEST.md)
 - [Code Conventions](docs/CONVENTIONS.md)
 

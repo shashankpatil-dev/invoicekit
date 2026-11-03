@@ -90,7 +90,7 @@ Each BU has its own invoice fields, tax handling and layout. Building invoice ge
 | ID | Requirement |
 |---|---|
 | FR10 | Assign a number only after the payload passes validation |
-| FR11 | Keep a separate series per entity, BU and financial year |
+| FR11 | Keep a separate series per entity, BU, financial year and shard, so a busy BU can be split into several series |
 | FR12 | Never leave a gap caused by a rollback, duplicate or crash |
 | FR13 | Save the number and final payload together in one transaction |
 | FR14 | Never reuse or discard a committed number |

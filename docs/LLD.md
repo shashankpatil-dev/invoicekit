@@ -105,7 +105,7 @@ The full event, payload and field rules are in [Invoice Superset](INVOICE_SUPERS
   "invoiceId": "018f3c1e-7b0a-7d3e-9e0a-2f4c9a6d1b11",
   "bu": "subscriptions",
   "sourceEventId": "sub-482:2026-11",
-  "invoiceNumber": "SUBMH2627000142",
+  "invoiceNumber": "SUBA262700000142",
   "invoiceDate": "2026-11-01",
   "payload": { }
 }
@@ -122,7 +122,7 @@ Shortcut: inline payloads fit the 1MB Kafka default. Upgrade to a database refer
   "schemaVersion": 1,
   "invoiceId": "018f3c1e-7b0a-7d3e-9e0a-2f4c9a6d1b11",
   "bu": "subscriptions",
-  "invoiceNumber": "SUBMH2627000142",
+  "invoiceNumber": "SUBA262700000142",
   "uri": "gs://invoices/subscriptions/2026/11/01/018f3c1e-7b0a-7d3e-9e0a-2f4c9a6d1b11.pdf",
   "checksum": "crc32c:ab12cd34"
 }
@@ -162,8 +162,9 @@ CREATE TABLE entity (
 );
 
 CREATE TABLE bu_entity (
-  bu           text NOT NULL,
-  entity_code  text NOT NULL REFERENCES entity (entity_code),
+  bu             text NOT NULL,
+  entity_code    text NOT NULL REFERENCES entity (entity_code),
+  number_shards  int NOT NULL DEFAULT 1 CHECK (number_shards BETWEEN 1 AND 26),
   PRIMARY KEY (bu, entity_code)
 );
 
@@ -209,6 +210,7 @@ CREATE TABLE invoice (
   financial_year    text NOT NULL,
   invoice_date      date NOT NULL,
   invoice_number    varchar(16),
+  shard             char(1),
   sequence_no       bigint,
   contract_version  int NOT NULL,
   payload           jsonb NOT NULL,
@@ -221,7 +223,7 @@ CREATE TABLE invoice (
   created_at        timestamptz NOT NULL DEFAULT now(),
   updated_at        timestamptz NOT NULL DEFAULT now(),
   UNIQUE (bu, source_event_id),
-  UNIQUE (entity_code, bu, financial_year, sequence_no),
+  UNIQUE (entity_code, bu, financial_year, shard, sequence_no),
   UNIQUE (entity_code, financial_year, invoice_number)
 );
 
@@ -234,8 +236,9 @@ CREATE TABLE invoice_counter (
   entity_code     text NOT NULL REFERENCES entity (entity_code),
   bu              text NOT NULL,
   financial_year  text NOT NULL,
+  shard           char(1) NOT NULL,
   last_no         bigint NOT NULL,
-  PRIMARY KEY (entity_code, bu, financial_year)
+  PRIMARY KEY (entity_code, bu, financial_year, shard)
 );
 
 CREATE TABLE outbox (
@@ -317,7 +320,8 @@ Startup validation fails the process when:
 - An active config names a field missing from `InvoiceField`.
 - An adapter exists with no active config, or the reverse.
 - The BU template is missing.
-- `number_format` has no sequence placeholder.
+- `number_format` breaks a rule in [Numbering Design](NUMBERING.md#startup-validation), such as exceeding 16 characters or omitting `{shard}` when a BU has more than one shard.
+- Two BUs under one entity share a number prefix.
 
 Runtime rules:
 
@@ -365,14 +369,14 @@ VALUES (:id, :bu, :entityCode, :eventId, :fy, :date, :version, :payload, 'NUMBER
 ON CONFLICT (bu, source_event_id) DO NOTHING;
 -- 0 rows: ROLLBACK, ack, stop. Another worker won.
 
-INSERT INTO invoice_counter (entity_code, bu, financial_year, last_no)
-VALUES (:entityCode, :bu, :fy, 1)
-ON CONFLICT (entity_code, bu, financial_year)
+INSERT INTO invoice_counter (entity_code, bu, financial_year, shard, last_no)
+VALUES (:entityCode, :bu, :fy, :shard, 1)
+ON CONFLICT (entity_code, bu, financial_year, shard)
 DO UPDATE SET last_no = invoice_counter.last_no + 1
 RETURNING last_no;
 
 UPDATE invoice
-SET sequence_no = :lastNo, invoice_number = :formatted,
+SET shard = :shard, sequence_no = :lastNo, invoice_number = :formatted,
     payload = jsonb_set(payload, '{invoiceNumber}', to_jsonb(:formatted::text))
 WHERE id = :id;
 
@@ -394,11 +398,17 @@ Why this order is safe:
 
 ### Series and format
 
-- `SeriesKey` is `entity_code + bu + financial_year`.
+The full design, with diagrams, is in [Numbering Design](NUMBERING.md).
+
+- `SeriesKey` is `entity_code + bu + financial_year + shard`.
+- **Shards:** a busy BU can be split into several series, `A` to `Z`, set by `bu_entity.number_shards`. Rule 46 allows multiple series. The shard letter is part of the number, so shards can never produce the same number.
+- **Choosing a shard:** `hash(source_event_id) mod number_shards`, so the same event always lands in the same shard. Changing the shard count never renumbers an invoice, because duplicates are caught before a shard is chosen.
+- **Capacity:** the `{seq:N}` width limits each series to `10^N - 1` numbers a year. Allocation fails rather than wrapping, and an alert fires at 80%. Adding shards is the fix.
 - Each BU needs its own prefix. `UNIQUE (entity_code, financial_year, invoice_number)` protects uniqueness under a shared GSTIN.
-- `financial_year` comes from `invoiceDate` using the rules for the region, and is saved on the invoice. Example: `2026-27`.
+- `financial_year` comes from `invoiceDate`, running 1 April to 31 March, and is saved on the invoice. Example: `2026-27`.
 - `entity_code` comes from the event, and is saved so a retry can't change series.
-- `number_format` is per BU. Example: `SUBMH{fy}{seq:6}` gives `SUBMH2627000142`.
+- `number_format` is per BU, using the tokens `{shard}`, `{fy}`, `{fy:full}` and `{seq:N}`. Example: `SUB{shard}{fy}{seq:8}` gives `SUBA262700000142`.
+- Uniqueness is required per GSTIN, and each entity is one GSTIN, so the state doesn't need to appear in the number.
 - Numbers are at most 16 characters, using only letters, digits, `-` and `/`. Startup validation rejects a format that can exceed this.
 
 ### Why not other allocators
@@ -408,6 +418,7 @@ Why this order is safe:
 | PostgreSQL `SEQUENCE` | Rollbacks leave gaps |
 | Redis `INCR` | Failover can move the counter backwards and reissue numbers |
 | Reserved blocks | Crashes leave gaps, and numbers come out of order |
+| Pool with `SKIP LOCKED` | Gap-free, but a rollback can issue numbers out of order. Kept only as a load test comparison |
 
 ## 8. Outbox publishing
 
@@ -623,7 +634,7 @@ Example response:
 {
   "id": "018f3c1e-7b0a-7d3e-9e0a-2f4c9a6d1b11",
   "bu": "subscriptions",
-  "invoiceNumber": "SUBMH2627000142",
+  "invoiceNumber": "SUBA262700000142",
   "status": "STORED",
   "invoiceDate": "2026-11-01",
   "createdAt": "2026-11-01T10:15:30Z"

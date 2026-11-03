@@ -163,7 +163,7 @@ If Redis is down, the system reads PostgreSQL and accepts some duplicate renderi
 |---|---|
 | Intake | Add partitions and pods |
 | Render | Scale render workers and Typst renderer workers, with workers matched to CPU |
-| Hot series | Keep the transaction short, split into more series where rules allow |
+| Hot series | Keep the transaction short, and add shards to split a busy BU into more series. See [Numbering Design](NUMBERING.md) |
 | PostgreSQL writes | Connection pool limits, partition `invoice` by month, keep outbox small |
 | Publish delay | Move from polling to CDC |
 | Burst | Kafka buffers the backlog |
