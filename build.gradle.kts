@@ -59,7 +59,9 @@ tasks.test {
   finalizedBy(tasks.jacocoTestReport)
 }
 
-val coveredClasses = "com/shashank/invoicekit/documentengine/**"
+// Modules held to the coverage limits below; new modules join as they are built.
+val coveredClasses =
+  listOf("documentengine", "numbering").map { "com/shashank/invoicekit/$it/**" }
 
 tasks.jacocoTestReport {
   dependsOn(tasks.test)
