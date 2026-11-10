@@ -11,6 +11,7 @@ The document engine and numbering modules are complete for now. The invoice flow
 - [LLD](docs/LLD.md)
 - [Invoice Superset](docs/INVOICE_SUPERSET.md)
 - [Numbering Design](docs/NUMBERING.md)
+- [Intake Design](docs/INTAKE.md)
 - [Load Test Results](docs/LOAD_TEST.md)
 - [Code Conventions](docs/CONVENTIONS.md)
 
