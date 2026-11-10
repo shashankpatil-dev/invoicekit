@@ -42,6 +42,53 @@ docker compose up -d
 
 Start Debezium with `docker compose --profile cdc up -d`. It listens on `localhost:8083`.
 
+## Try intake locally
+
+Send test events through Kafka and watch them become numbered invoices. Run these from the repository root.
+
+1. Start the stack.
+
+   ```bash
+   docker compose -f deploy/compose/docker-compose.yml up -d
+   ```
+
+2. Run the app as the intake worker. On first start it creates the schema, so leave it running and use another terminal for the rest.
+
+   ```bash
+   ./gradlew bootRun --args='--spring.profiles.active=intake'
+   ```
+
+3. Add the fake `LOCAL_MH` entity that the test events invoice from. Running it again changes nothing.
+
+   ```bash
+   docker compose -f deploy/compose/docker-compose.yml exec -T postgres \
+     psql -U invoicekit -d invoicekit < deploy/compose/seed/local-entity.sql
+   ```
+
+4. Send events. The count defaults to 1, and every event gets a new `sourceEventId`.
+
+   ```bash
+   deploy/compose/scripts/send-invoice-events.sh 10
+   ```
+
+5. See the invoices, the yearly partition each landed in, and their outbox rows.
+
+   ```bash
+   docker compose -f deploy/compose/docker-compose.yml exec postgres psql -U invoicekit -d invoicekit -c \
+     "SELECT i.invoice_number, i.source_event_id, i.tableoid::regclass AS partition, i.status, o.topic AS outbox
+      FROM invoice i JOIN outbox o ON o.invoice_id = i.id WHERE i.entity_code = 'LOCAL_MH' ORDER BY i.invoice_number"
+   ```
+
+6. See rejected events on the dead-letter topic, with their headers.
+
+   ```bash
+   docker compose -f deploy/compose/docker-compose.yml exec kafka /opt/kafka/bin/kafka-console-consumer.sh \
+     --bootstrap-server localhost:9092 --topic invoice.requested.dlq --from-beginning --timeout-ms 5000 \
+     --property print.key=true --property print.headers=true
+   ```
+
+Traces for each event are in Jaeger at http://localhost:16687, under the `invoicekit` service. The seed and the script are only for trying things by hand, and can be deleted.
+
 ## Layout
 
 ```text
