@@ -36,6 +36,11 @@ class ConfigurationFilesTest {
               .isEqualTo("5m");
           assertThat(environment.getProperty("invoicekit.intake.max-payload-bytes"))
               .isEqualTo("900000");
+          assertThat(environment.getProperty("invoicekit.intake.concurrency")).isEqualTo("4");
+          assertThat(environment.getProperty("invoicekit.intake.retry-initial-interval"))
+              .isEqualTo("200ms");
+          assertThat(environment.getProperty("invoicekit.intake.retry-max-interval"))
+              .isEqualTo("30s");
           assertThat(environment.getProperty("server.port")).isEqualTo("8081");
           assertThat(environment.getProperty("management.tracing.sampling.probability"))
               .isEqualTo("1.0");
