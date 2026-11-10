@@ -12,6 +12,7 @@ The document engine, numbering and intake are built, with the `subscriptions` ad
 - [Invoice Superset](docs/INVOICE_SUPERSET.md)
 - [Numbering Design](docs/NUMBERING.md)
 - [Intake Design](docs/INTAKE.md)
+- [Outbox and Render Design](docs/RENDER.md)
 - [Load Test Results](docs/LOAD_TEST.md)
 - [Code Conventions](docs/CONVENTIONS.md)
 
