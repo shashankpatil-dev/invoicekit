@@ -1,0 +1,128 @@
+{
+  "contractVersion": 2,
+  "invoiceId": "018f3c1e-7b0a-7d3e-9e0a-2f4c9a6d1b11",
+  "bu": "subscriptions",
+  "sourceEventId": "sub-482:2026-11",
+  "invoiceNumber": "SUBA260000000142",
+  "invoiceDate": "2026-11-01",
+  "financialYear": "2026-27",
+  "supplyCategory": "DOMESTIC",
+  "supplyType": "INTRA_STATE",
+  "placeOfSupply": {
+    "stateName": "Maharashtra",
+    "stateCode": "27"
+  },
+  "reverseCharge": false,
+  "currency": "INR",
+  "exchangeRate": "1.0000",
+  "dueDate": "2026-11-15",
+  "paymentTerms": "Net 14",
+  "declarations": [
+    {
+      "code": "GENERAL",
+      "text": "We declare that this invoice shows the actual price of the services described and that all particulars are true and correct."
+    },
+    {
+      "code": "SUBSCRIPTION_PERIOD",
+      "text": "Subscription charges cover the service period shown against each line."
+    },
+    {
+      "code": "ELECTRONIC_INVOICE",
+      "text": "This is an electronically generated invoice and does not require a signature."
+    }
+  ],
+  "supplier": {
+    "entityCode": "ACME_MH",
+    "legalName": "Acme Cloud Private Limited",
+    "tradeName": "Acme Cloud",
+    "gstin": "27AAAAA0000A1Z5",
+    "stateName": "Maharashtra",
+    "stateCode": "27",
+    "address": "45 Tech Park, Mumbai 400001",
+    "registeredOfficeAddress": "1 Corporate Park, Mumbai 400001",
+    "cin": "U72900MH2020PTC000000",
+    "pan": "AAAAA0000A",
+    "lutNumber": "AD2700000000000",
+    "bankDetails": {
+      "accountName": "Acme Cloud Private Limited",
+      "accountNumber": "000000000000",
+      "ifsc": "ABCD0000001"
+    },
+    "contactEmail": "billing@acme.example",
+    "contactPhone": "+91 00000 00000",
+    "terms": "Payment due as per the agreed terms."
+  },
+  "recipient": {
+    "name": "Example Traders Private Limited",
+    "gstin": "27ABCDE1234F1Z5",
+    "address": "12 Market Road, Pune",
+    "stateName": "Maharashtra",
+    "stateCode": "27",
+    "pin": "411001",
+    "email": "accounts@example.com"
+  },
+  "lineItems": [
+    {
+      "lineNo": 1,
+      "description": "Growth plan",
+      "taxCode": "SAAS_18",
+      "hsnCode": "998314",
+      "quantity": "10",
+      "unit": "NOS",
+      "unitPrice": "1500.0000",
+      "discount": "1500.00",
+      "servicePeriodStart": "2026-11-01",
+      "servicePeriodEnd": "2026-11-30",
+      "taxableValue": "13500.00",
+      "gstRate": "18.00",
+      "cgstRate": "9.00",
+      "cgstAmount": "1215.00",
+      "sgstRate": "9.00",
+      "sgstAmount": "1215.00",
+      "igstRate": "0.00",
+      "igstAmount": "0.00",
+      "cessAmount": "0.00",
+      "lineTotal": "15930.00"
+    },
+    {
+      "lineNo": 2,
+      "description": "Extra storage",
+      "taxCode": "SAAS_18",
+      "hsnCode": "998314",
+      "quantity": "20",
+      "unit": "OTH",
+      "unitPrice": "50.0000",
+      "discount": "0.00",
+      "servicePeriodStart": "2026-11-01",
+      "servicePeriodEnd": "2026-11-30",
+      "taxableValue": "1000.00",
+      "gstRate": "18.00",
+      "cgstRate": "9.00",
+      "cgstAmount": "90.00",
+      "sgstRate": "9.00",
+      "sgstAmount": "90.00",
+      "igstRate": "0.00",
+      "igstAmount": "0.00",
+      "cessAmount": "0.00",
+      "lineTotal": "1180.00"
+    }
+  ],
+  "totals": {
+    "totalTaxableValue": "14500.00",
+    "totalCgst": "1305.00",
+    "totalSgst": "1305.00",
+    "totalIgst": "0.00",
+    "totalCess": "0.00",
+    "totalTax": "2610.00",
+    "totalValue": "17110.00",
+    "amountInWords": "Rupees Seventeen Thousand One Hundred Ten Only",
+    "totalTaxableValueInr": "14500.00",
+    "totalValueInr": "17110.00"
+  },
+  "attributes": {
+    "subscriptionId": "sub-482",
+    "planName": "Growth",
+    "billingCycle": "MONTHLY",
+    "couponCode": "WELCOME10"
+  }
+}

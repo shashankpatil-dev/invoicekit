@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 2,
+  "bu": "subscriptions",
+  "sourceEventId": "sub-482:2026-11",
+  "entityCode": "ACME_MH",
+  "invoiceDate": "2026-11-01",
+  "supplyCategory": "DOMESTIC",
+  "placeOfSupplyStateCode": "27",
+  "reverseCharge": false,
+  "currency": "INR",
+  "dueDate": "2026-11-15",
+  "paymentTerms": "Net 14",
+  "recipient": {
+    "name": "Example Traders Private Limited",
+    "gstin": "27ABCDE1234F1Z5",
+    "address": "12 Market Road, Pune",
+    "stateName": "Maharashtra",
+    "stateCode": "27",
+    "pin": "411001",
+    "email": "accounts@example.com"
+  },
+  "lineItems": [
+    {
+      "description": "Growth plan",
+      "taxCode": "SAAS_18",
+      "quantity": "10",
+      "unit": "NOS",
+      "unitPrice": "1500.0000",
+      "discount": "1500.00",
+      "servicePeriodStart": "2026-11-01",
+      "servicePeriodEnd": "2026-11-30"
+    },
+    {
+      "description": "Extra storage",
+      "taxCode": "SAAS_18",
+      "quantity": "20",
+      "unit": "OTH",
+      "unitPrice": "50.0000",
+      "discount": "0.00",
+      "servicePeriodStart": "2026-11-01",
+      "servicePeriodEnd": "2026-11-30"
+    }
+  ],
+  "attributes": {
+    "subscriptionId": "sub-482",
+    "planName": "Growth",
+    "billingCycle": "MONTHLY",
+    "couponCode": "WELCOME10"
+  }
+}

@@ -478,7 +478,7 @@ The `supplier` snapshot is the same as the domestic example, so it's shortened h
   "invoiceId": "018f3c1e-7b0a-7d3e-9e0a-2f4c9a6d1b12",
   "bu": "international",
   "sourceEventId": "intl-12:2026-11",
-  "invoiceNumber": "INTMH2627000017",
+  "invoiceNumber": "INTA260000000017",
   "invoiceDate": "2026-11-01",
   "financialYear": "2026-27",
   "supplyCategory": "EXPORT_LUT",

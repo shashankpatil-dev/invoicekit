@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 2,
+  "bu": "international",
+  "sourceEventId": "intl-12:2026-11",
+  "entityCode": "ACME_MH",
+  "invoiceDate": "2026-11-01",
+  "supplyCategory": "EXPORT_LUT",
+  "reverseCharge": false,
+  "currency": "USD",
+  "exchangeRate": "85.0000",
+  "recipient": {
+    "name": "Example Software Inc",
+    "foreignTaxId": "00-0000000",
+    "address": "100 Market Street, San Francisco, CA 94105",
+    "countryCode": "US",
+    "email": "billing@example.com"
+  },
+  "lineItems": [
+    {
+      "description": "Pro plan",
+      "taxCode": "SAAS_18",
+      "quantity": "10",
+      "unit": "NOS",
+      "unitPrice": "100.0000",
+      "discount": "0.00",
+      "servicePeriodStart": "2026-11-01",
+      "servicePeriodEnd": "2026-11-30"
+    }
+  ],
+  "attributes": {
+    "subscriptionId": "sub-910",
+    "planName": "Pro",
+    "billingCycle": "MONTHLY"
+  }
+}
