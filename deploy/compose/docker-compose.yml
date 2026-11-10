@@ -102,6 +102,14 @@ services:
     ports:
       - "9091:9090"
 
+  # Collects traces from the app over OTLP HTTP, kept in memory, with a UI to browse them.
+  # Host ports are shifted from Jaeger's usual 16686 and 4318 to avoid clashing with other projects.
+  jaeger:
+    image: jaegertracing/jaeger:2.22.0
+    ports:
+      - "16687:16686"
+      - "4320:4318"
+
   grafana:
     image: grafana/grafana:12.1.0
     environment:

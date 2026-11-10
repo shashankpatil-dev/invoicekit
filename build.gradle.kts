@@ -31,6 +31,8 @@ dependencies {
   implementation("org.flywaydb:flyway-database-postgresql")
   implementation("com.google.cloud:google-cloud-storage:2.53.3")
   implementation("io.micrometer:micrometer-registry-prometheus")
+  implementation("io.micrometer:micrometer-tracing-bridge-otel")
+  implementation("io.opentelemetry:opentelemetry-exporter-otlp")
   implementation("com.github.ben-manes.caffeine:caffeine")
   runtimeOnly("org.postgresql:postgresql")
 

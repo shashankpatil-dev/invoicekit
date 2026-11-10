@@ -37,6 +37,12 @@ class ConfigurationFilesTest {
           assertThat(environment.getProperty("invoicekit.intake.max-payload-bytes"))
               .isEqualTo("900000");
           assertThat(environment.getProperty("server.port")).isEqualTo("8081");
+          assertThat(environment.getProperty("management.tracing.sampling.probability"))
+              .isEqualTo("1.0");
+          assertThat(environment.getProperty("management.otlp.tracing.endpoint"))
+              .isEqualTo("http://localhost:4320/v1/traces");
+          assertThat(environment.getProperty("spring.kafka.listener.observation-enabled"))
+              .isEqualTo("true");
         });
   }
 }

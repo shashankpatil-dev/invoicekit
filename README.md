@@ -37,6 +37,8 @@ docker compose up -d
 | Document engine | `localhost:3002` |
 | Prometheus | http://localhost:9091 |
 | Grafana | http://localhost:3001 |
+| Jaeger UI | http://localhost:16687 |
+| Jaeger OTLP HTTP | `localhost:4320` |
 
 Start Debezium with `docker compose --profile cdc up -d`. It listens on `localhost:8083`.
 
