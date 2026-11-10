@@ -24,7 +24,15 @@ class ConfigurationFilesTest {
           assertThat(environment.getProperty("spring.data.redis.port")).isEqualTo("6380");
           assertThat(environment.getProperty("invoicekit.storage.bucket")).isEqualTo("invoices");
           assertThat(environment.getProperty("invoicekit.render.timeout")).isEqualTo("25s");
-          assertThat(environment.getProperty("invoicekit.outbox.mode")).isEqualTo("polling");
+          assertThat(environment.getProperty("invoicekit.outbox.mode")).isNull();
+          assertThat(environment.getProperty("invoicekit.outbox.poll-interval")).isEqualTo("100ms");
+          assertThat(environment.getProperty("invoicekit.outbox.batch-size")).isEqualTo("500");
+          assertThat(environment.getProperty("invoicekit.outbox.send-timeout")).isEqualTo("10s");
+          assertThat(environment.getProperty("invoicekit.outbox.retention")).isEqualTo("24h");
+          assertThat(environment.getProperty("invoicekit.outbox.cleanup-interval"))
+              .isEqualTo("10m");
+          assertThat(environment.getProperty("invoicekit.outbox.cleanup-batch-size"))
+              .isEqualTo("5000");
           assertThat(environment.getProperty("invoicekit.notification.smtp-port"))
               .isEqualTo("1025");
           assertThat(environment.getProperty("invoicekit.numbering.lock-timeout")).isEqualTo("2s");
