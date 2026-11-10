@@ -2,11 +2,11 @@
 
 | | |
 |---|---|
-| Status | Steps 1 to 3 built, step 4 next |
+| Status | Built. Deviations are listed in section 15 |
 | Date | 2026-11-10 |
 | Related | [Invoice Superset](INVOICE_SUPERSET.md), [Numbering Design](NUMBERING.md), [LLD](LLD.md), [PRD](PRD.md) FR1-FR13 |
 
-Intake turns one `invoice.requested` event into one numbered invoice, saved with its payload and an outbox row for rendering. This document covers what intake guarantees, the flow, the adapter contract, how the payload is built, the transaction, errors, the schema, and the four build steps.
+Intake turns one `invoice.requested` event into one numbered invoice, saved with its payload and an outbox row for rendering. This document covers what intake guarantees, the flow, the adapter contract, how the payload is built, the transaction, errors, the schema, the four build steps, and how the build differs from the plan.
 
 ## 1. Scope
 
@@ -198,9 +198,12 @@ COMMIT;
 | `SERIES_EXHAUSTED` | The series has no numbers left | Dead-letter topic, then ack. An operator adds shards and replays |
 | Transient | PostgreSQL down, timeouts, `SeriesBusyException` | Retry with backoff from 200ms to 30s, without ack, until it succeeds |
 
-- Permanent errors are one exception type, `RejectedEventException`, carrying the code and every reason.
-- Spring Kafka's `DefaultErrorHandler` sends it straight to `invoice.requested.dlq`, adding the `x-error-code` and `x-error-message` headers next to its own source topic, partition and offset headers.
-- Every other exception is transient and retried, so the partition waits instead of flooding the dead-letter topic while the database is down.
+- Permanent errors are one exception type, `RejectedEventException`, carrying the code and every reason. A message that isn't an event at all, such as broken JSON, JSON `null` or an empty value, is rejected as `INVALID_MESSAGE`.
+- Spring Kafka's `DefaultErrorHandler` sends it straight to `invoice.requested.dlq`, found anywhere in the exception's cause chain. The dead letter keeps the source key, but Kafka picks its partition, because the dead-letter topic has fewer partitions than the source.
+- The dead letter carries `x-error-code` and `x-error-message` (every reason, separated by `; `) next to Spring Kafka's own headers: `kafka_dlt-original-topic`, `kafka_dlt-original-partition`, `kafka_dlt-original-offset` and the exception details. Its own Kafka timestamp is when it failed.
+- Every other exception is transient and retried, so the partition waits instead of flooding the dead-letter topic while the database is down. Each wait is 1.5 times the last, from 200ms up to 30s, with no limit on attempts.
+- The offset is committed only after intake succeeds or the dead-letter publish succeeds. If that publish fails, the event is tried again.
+- Each failed attempt is logged with its root cause, and each dead letter with its reasons. Spring Kafka alone logs a retry without its cause.
 
 ## 9. Schema
 
@@ -236,7 +239,7 @@ Reference data migration (`V4`): all GST states, the `SAAS_18` tax code, and the
 | `invoicekit.intake.reference-cache-ttl` | `5m` | How long Caffeine keeps reference data |
 | `invoicekit.intake.max-payload-bytes` | `900000` | Keeps `invoice.render` under Kafka's 1MB default |
 
-Tracing goes in `config/tracing.properties`: the sampling rate and the OTLP endpoint. Jaeger joins the Compose stack so traces can be viewed locally.
+Tracing goes in `config/tracing.properties`: the sampling rate, the OTLP endpoint, and tracing for Kafka listeners and sends. One trace follows an event through the listener and, for a rejected event, its dead-letter publish. Jaeger joins the Compose stack so traces can be viewed locally at http://localhost:16687.
 
 ## 11. Code structure
 
@@ -250,10 +253,10 @@ invoice/
                             TaxCalculator, AmountInWords, DeclarationResolver, IntakeTransaction
   application/port/outbound ReferenceData, InvoiceStore
   adapter/inbound/          InvoiceRequestedListener
-  adapter/kafka/            Kafka and error handler setup
+  adapter/kafka/            RejectionHeaders, FailedEventLog
   adapter/outbound/postgres CachedReferenceData, PostgresInvoiceStore
 adaption/subscriptions/     SubscriptionsAdapter
-bootstrap/configuration/    IntakeConfiguration, IntakeProperties, tracing setup
+bootstrap/configuration/    IntakeConfiguration, IntakeKafkaConfiguration, IntakeProperties
 ```
 
 Architecture rules, added to ArchUnit:
@@ -273,7 +276,7 @@ Architecture rules, added to ArchUnit:
 | `SubscriptionsAdapter` and registry tests | Field rules, the prefix check, and every startup failure |
 | `IntakeTransactionTest` (PostgreSQL) | A new event saves the invoice, audit and outbox rows together. A duplicate saves nothing and uses no number. A failure after numbering leaves no gap |
 | Partition tests | Invoices land in the right yearly partition, duplicates are caught across partitions, and next year's partition exists |
-| `InvoiceRequestedListenerTest` (Kafka + PostgreSQL) | An event becomes a numbered invoice and an outbox row, a bad event reaches the DLQ with its headers, and a database outage is retried without loss |
+| `InvoiceRequestedListenerTest` (Kafka + PostgreSQL) | An event becomes a numbered invoice and an outbox row, a repeated event gives one invoice, unreadable, invalid and disallowed events reach the DLQ with their headers, and events sent while the database is paused are retried without loss |
 | Dummy events | 1, then 10 `subscriptions` events through Kafka on the local stack, with the rows checked in PostgreSQL |
 | Concurrency | Many events at once, including repeats, still give one invoice each and gap-free series |
 
@@ -292,6 +295,17 @@ Each step ends with a passing build, its own short commits, and a push.
 
 - **Payload contract review:** the superset still needs a CA's review. Its export example shows an old number format, which step 2 corrects.
 - **Year rollover:** partitions must exist before each financial year. The test catches a missing one, but production also needs the next migration shipped in time.
-- **Retry forever:** a transient error that never clears holds its partition. Lag alerts must catch it.
+- **Retry forever:** a transient error that never clears holds its partition. Lag alerts must catch it, and the log shows each failed attempt with its cause.
 - **JSON written three times:** each payload is serialised once for the size check and once more for each of the invoice row and the render message. That's cheap at current volumes, and could become one pass if profiling shows it matters.
 - **Only one BU:** only `subscriptions` gets an adapter now. The contract is shaped by its needs, and the next adapters will test it.
+
+## 15. Build notes
+
+How the build differs from the plan above:
+
+| Plan | Built | Why |
+|---|---|---|
+| A `@KafkaListener` | `IntakeKafkaConfiguration` builds the listener container from Spring Boot's factory, and `InvoiceRequestedListener` is a plain class | Topic, consumer group, concurrency and error handling stay in configuration, and the container still gets the shared Kafka and tracing settings |
+| LLD headers `x-source-topic`, `x-source-partition`, `x-source-offset`, `x-failed-at` | Spring Kafka's `kafka_dlt-original-*` headers, and the dead letter's own timestamp | They carry the same facts without extra code |
+| No retry log | `FailedEventLog` logs each failed attempt and each dead letter | Spring Kafka logs a retry without its cause, so an outage or a bug would hold a partition silently |
+| A setting for how fast retry waits grow | Spring's default of 1.5 | The plan only names the first and longest waits |

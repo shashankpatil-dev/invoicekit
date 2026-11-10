@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Status | Draft, document engine and numbering built |
-| Date | 2026-11-01 |
+| Status | Draft, document engine, numbering and intake built |
+| Date | 2026-11-10 |
 | Related | [PRD](PRD.md), [HLD](HLD.md) |
 
 ## Build status
@@ -13,7 +13,7 @@
 | `documentengine` | Complete for now, with the `subscriptions` template |
 | `document-engine` | Complete for now |
 | `numbering` | Complete and load tested. See [Numbering Design](NUMBERING.md) |
-| `invoice` intake, `adaption/subscriptions` | Steps 1 to 3 built: schema, payload rules, intake transaction. Kafka intake is next. See [Intake Design](INTAKE.md) |
+| `invoice` intake, `adaption/subscriptions` | Built: schema, payload rules, intake transaction, Kafka listener with retries and the DLQ, tracing. See [Intake Design](INTAKE.md) |
 | `archive`, other BU adapters | Not built yet |
 
 The document engine still needs the `international` template and a full-pipeline load test. See [Load Test Results](LOAD_TEST.md).
@@ -132,7 +132,7 @@ Shortcut: inline payloads fit the 1MB Kafka default. Upgrade to a database refer
 
 ### DLQ headers
 
-`x-error-code`, `x-error-message`, `x-source-topic`, `x-source-partition`, `x-source-offset`, `x-failed-at`.
+`x-error-code` and `x-error-message`, next to Spring Kafka's `kafka_dlt-original-topic`, `kafka_dlt-original-partition`, `kafka_dlt-original-offset` and exception headers. The dead letter's own timestamp is when it failed. See [Intake Design](INTAKE.md#8-errors).
 
 ## 3. Database
 
@@ -685,7 +685,8 @@ Engineering-owned settings live in `.properties` files, one file per topic. Valu
 | `resources/config/jobs.properties` | Outbox and recovery cron |
 | `resources/config/notification.properties` | Mail server |
 | `resources/config/numbering.properties` | Counter lock and statement timeouts, utilisation warning |
-| `resources/config/intake.properties` | Reference data cache lifetime, payload size limit |
+| `resources/config/intake.properties` | Consumer threads, retry waits, reference data cache lifetime, payload size limit |
+| `resources/config/tracing.properties` | Trace sampling, OTLP endpoint, Kafka listener and send tracing |
 | `document-engine/config/renderer.properties` | Renderer queue, timeouts and gunicorn |
 
 `application.yml` only imports these files and sets worker profiles. A new topic gets its own file. Renderer values can be overridden by environment variable, so `render.max-waiting` becomes `RENDER_MAX_WAITING`. The renderer refuses to start unless `server.threads` exceeds `render.slots + render.max-waiting`.
@@ -759,9 +760,9 @@ Each library is added together with the code that first uses it, so nothing sits
 | Library | Use | Added with |
 |---|---|---|
 | Spring `JdbcClient` | All SQL. The statements are short, PostgreSQL-specific and order-sensitive, so they stay visible instead of going through an ORM | In use |
-| Micrometer Tracing with the OpenTelemetry bridge, OTLP exporter | One trace from intake to notification, carried in Kafka headers | Invoice module |
-| Spring Kafka `DefaultErrorHandler` | Consumer retries with backoff, then the DLQ | Invoice module |
-| Caffeine | In-process cache for adapter config and tax rates, which rarely change | Invoice module |
+| Micrometer Tracing with the OpenTelemetry bridge, OTLP exporter | One trace from intake to notification, carried in Kafka headers | In use |
+| Spring Kafka `DefaultErrorHandler` | Consumer retries with backoff, then the DLQ | In use |
+| Caffeine | In-process cache for adapter config and tax rates, which rarely change | In use |
 | Spring Retry or Resilience4j | Retries with jitter for renderer and storage calls. Resilience4j only if a circuit breaker is needed | Render worker |
 | Debezium | Change data capture for the outbox | Phase 2 |
 

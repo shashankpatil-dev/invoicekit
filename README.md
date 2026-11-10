@@ -2,7 +2,7 @@
 
 Event-driven invoice generation for multiple business units, built with Java 21, Spring Boot, Kafka, PostgreSQL, Redis and Typst.
 
-The document engine and numbering modules are complete for now. The invoice flow, archive and BU adapters aren't built yet.
+The document engine, numbering and intake are built, with the `subscriptions` adapter. Rendering from the outbox, notification, archive and the other BU adapters aren't built yet.
 
 ## Docs
 
