@@ -217,11 +217,12 @@ Other changes:
 
 - **Duplicate key moves:** `invoice.invoice_source_event_unique` moves to `invoice_event`, which is the only place a duplicate is caught.
 - **Foreign keys dropped:** `outbox.invoice_id` and `invoice_audit.invoice_id` lose their foreign keys, because a foreign key to a partitioned table must include the partition key. The transaction writes all three rows together, so they can't disagree.
-- **Partitions created ahead:** the migration creates partitions for 2025-26 to 2030-31. A test fails when the next year's partition is missing, so it can't be forgotten.
+- **Partitions created ahead:** `V3` creates partitions `invoice_2025_26` to `invoice_2030_31`. A test fails when the next year's partition is missing, so it can't be forgotten. New partitions must keep the `invoice_YYYY_YY` name.
+- **Error names:** a broken unique key on a partitioned table reports the partition's own index name, such as `invoice_event_07_pkey`, not the parent constraint. Code and tests match on the key columns instead.
 - **`invoice_numbered_together`:** this check stays, but invoices are now always inserted numbered.
 - **Limit:** one partition per year is about 3.65B rows by year 10. If that is too large, monthly sub-partitions would need the numbering safety-net keys replaced by a reconciliation job. Not needed for this plan.
 
-Reference data migration (`V3`): all GST states, the `SAAS_18` tax code, and the `subscriptions` adapter config. Entities are company data, so they stay in the test series and local seeds, never in migrations.
+Reference data migration (`V4`): all GST states, the `SAAS_18` tax code, and the `subscriptions` adapter config. Entities are company data, so they stay in the test series and local seeds, never in migrations.
 
 ## 10. Configuration
 

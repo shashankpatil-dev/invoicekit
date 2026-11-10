@@ -1,6 +1,4 @@
 -- Temporary series for numbering tests. Delete this folder to discard it.
-INSERT INTO gst_state (state_code, state_name) VALUES ('27', 'Maharashtra');
-
 INSERT INTO entity (
   entity_code, legal_name, gstin, state_code, address, registered_office_address, cin
 ) VALUES (

@@ -9,37 +9,41 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * Places dummy orders the way the invoice module will number them, standing in until it exists.
  *
- * <p>Each order runs in one transaction: add the invoice without a number, stop if its event was
- * seen before, otherwise take the next number and store it on the invoice. If anything fails, the
- * number rolls back with the invoice, so the series keeps no gap.
+ * <p>Each order runs in one transaction: record its event, stop if the event was seen before,
+ * otherwise take the next number and add the invoice already numbered. If anything fails, the
+ * number rolls back with the event and the invoice, so the series keeps no gap.
  */
 class DummyOrders {
 
-  /** Adds the invoice without a number. A repeated event adds nothing and skips the counter. */
-  private static final String ADD_INVOICE =
+  /** Records the order's event. A repeated event adds nothing and skips the counter. */
+  private static final String RECORD_EVENT =
       """
-      INSERT INTO invoice (id, bu, entity_code, source_event_id, financial_year, invoice_date,
-                           contract_version, payload, status)
-      VALUES (:id, :businessUnit, :entityCode, :sourceEventId, :financialYear, :invoiceDate, 1,
-              jsonb_build_object('orderId', :sourceEventId, 'plan', 'monthly',
-                                 'amount', 499.00, 'currency', 'INR'),
-              'NUMBERED')
+      INSERT INTO invoice_event (bu, source_event_id, invoice_id, financial_year)
+      VALUES (:businessUnit, :sourceEventId, :invoiceId, :financialYear)
       ON CONFLICT (bu, source_event_id) DO NOTHING
       """;
 
-  /** Stores the number on the invoice. Shard, sequence and number are always set together. */
-  private static final String STORE_NUMBER =
+  /** Adds the invoice with its number, so shard, sequence and number arrive together. */
+  private static final String ADD_INVOICE =
       """
-      UPDATE invoice
-      SET shard = :shard, sequence_no = :sequenceNo, invoice_number = :invoiceNumber,
-          updated_at = now()
-      WHERE id = :id
+      INSERT INTO invoice (id, bu, entity_code, source_event_id, financial_year, invoice_date,
+                           shard, sequence_no, invoice_number, contract_version, payload, status)
+      VALUES (:id, :businessUnit, :entityCode, :sourceEventId, :financialYear, :invoiceDate,
+              :shard, :sequenceNo, :invoiceNumber, 1,
+              jsonb_build_object('orderId', :sourceEventId, 'plan', 'monthly',
+                                 'amount', 499.00, 'currency', 'INR'),
+              'NUMBERED')
       """;
 
+  /** Finds the invoice an event created, through the event row that points at it. */
   private static final String FIND_NUMBER =
       """
-      SELECT shard, sequence_no, invoice_number FROM invoice
-      WHERE bu = :businessUnit AND source_event_id = :sourceEventId
+      SELECT invoice.shard, invoice.sequence_no, invoice.invoice_number
+      FROM invoice_event
+      JOIN invoice ON invoice.id = invoice_event.invoice_id
+                  AND invoice.financial_year = invoice_event.financial_year
+      WHERE invoice_event.bu = :businessUnit
+        AND invoice_event.source_event_id = :sourceEventId
       """;
 
   private final TransactionTemplate transaction;
@@ -61,8 +65,8 @@ class DummyOrders {
     return transaction.execute(
         status -> {
           UUID invoiceId = UUID.randomUUID();
-          return addInvoice(invoiceId, order)
-              ? numberInvoice(invoiceId, order)
+          return recordEvent(invoiceId, order)
+              ? addNumberedInvoice(invoiceId, order)
               : storedNumber(order).invoiceNumber();
         });
   }
@@ -85,8 +89,14 @@ class DummyOrders {
         .single();
   }
 
-  /** Deletes the dummy invoices and their counters, so every series starts again at 1. */
+  /** Deletes the dummy invoices, their events and counters, so every series starts again at 1. */
   void deleteAll() {
+    jdbcClient
+        .sql(
+            "DELETE FROM invoice_event WHERE invoice_id IN"
+                + " (SELECT id FROM invoice WHERE entity_code = ?)")
+        .param(TestBusinessUnit.ENTITY_CODE)
+        .update();
     jdbcClient
         .sql("DELETE FROM invoice WHERE entity_code = ?")
         .param(TestBusinessUnit.ENTITY_CODE)
@@ -97,25 +107,28 @@ class DummyOrders {
         .update();
   }
 
-  /** Returns false when the order's event already has an invoice. */
-  private boolean addInvoice(UUID invoiceId, DummyOrder order) {
+  /** Returns false when the order's event was recorded before. */
+  private boolean recordEvent(UUID invoiceId, DummyOrder order) {
     return jdbcClient
-            .sql(ADD_INVOICE)
-            .param("id", invoiceId)
+            .sql(RECORD_EVENT)
             .param("businessUnit", order.businessUnit().code())
-            .param("entityCode", TestBusinessUnit.ENTITY_CODE)
             .param("sourceEventId", order.sourceEventId())
+            .param("invoiceId", invoiceId)
             .param("financialYear", order.financialYear())
-            .param("invoiceDate", order.invoiceDate())
             .update()
         == 1;
   }
 
-  private String numberInvoice(UUID invoiceId, DummyOrder order) {
+  private String addNumberedInvoice(UUID invoiceId, DummyOrder order) {
     InvoiceNumber number = numberingService.assign(order.numberingRequest());
     jdbcClient
-        .sql(STORE_NUMBER)
+        .sql(ADD_INVOICE)
         .param("id", invoiceId)
+        .param("businessUnit", order.businessUnit().code())
+        .param("entityCode", TestBusinessUnit.ENTITY_CODE)
+        .param("sourceEventId", order.sourceEventId())
+        .param("financialYear", order.financialYear())
+        .param("invoiceDate", order.invoiceDate())
         .param("shard", number.series().shard().code())
         .param("sequenceNo", number.sequenceNo())
         .param("invoiceNumber", number.value())

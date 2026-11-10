@@ -85,9 +85,10 @@ class NumberingSchemaTest {
   void rejectsTheSameSequenceTwiceInOneSeries() {
     insertInvoice("A", 1L, "SUBA260000000001");
 
+    // PostgreSQL names the violated key after the yearly partition's index, so match its columns.
     assertThatThrownBy(() -> insertInvoice("A", 1L, "SUBA260000000002"))
         .isInstanceOf(DuplicateKeyException.class)
-        .hasMessageContaining("invoice_series_sequence_unique");
+        .hasMessageContaining("Key (entity_code, bu, financial_year, shard, sequence_no)");
   }
 
   @ParameterizedTest
