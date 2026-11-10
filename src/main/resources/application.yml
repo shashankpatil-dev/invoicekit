@@ -13,6 +13,7 @@ spring:
       - classpath:config/jobs.properties
       - classpath:config/notification.properties
       - classpath:config/numbering.properties
+      - classpath:config/intake.properties
 
 ---
 # Worker profiles run without a web server.

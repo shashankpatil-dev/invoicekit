@@ -1,5 +1,6 @@
 package com.shashank.invoicekit.numbering.flow;
 
+import static com.shashank.invoicekit.numbering.flow.TestBusinessUnit.ENTITY_CODE;
 import static com.shashank.invoicekit.numbering.flow.TestBusinessUnit.ONE_SHARD;
 import static com.shashank.invoicekit.numbering.flow.TestBusinessUnit.TWO_DIGIT_SEQUENCE;
 import static java.util.concurrent.TimeUnit.SECONDS;
@@ -9,6 +10,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.github.dockerjava.api.DockerClient;
 import com.shashank.invoicekit.numbering.domain.entity.FinancialYear;
 import com.shashank.invoicekit.numbering.domain.exception.SeriesExhaustedException;
+import com.shashank.invoicekit.support.SeriesReconciliation;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -126,7 +128,7 @@ class NumberingFailureTest {
         .last()
         .isEqualTo("TSTA2699");
     assertThat(dummyOrders.invoiceCount()).isEqualTo(TWO_DIGIT_CAPACITY);
-    assertThat(reconciliation.issuedCount(TWO_DIGIT_SEQUENCE, FINANCIAL_YEAR))
+    assertThat(reconciliation.issuedCount(ENTITY_CODE, TWO_DIGIT_SEQUENCE.code(), FINANCIAL_YEAR))
         .isEqualTo(TWO_DIGIT_CAPACITY);
     assertThat(exhaustedCount() - exhaustedBefore).isEqualTo(1);
     assertThat(reconciliation.problems()).isEmpty();

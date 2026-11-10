@@ -5,7 +5,7 @@ import com.shashank.invoicekit.invoice.domain.entity.InvoiceDraft;
 import com.shashank.invoicekit.invoice.domain.entity.InvoiceRequested;
 
 /** A pass-through adapter for any BU, for tests that only need an adapter to exist. */
-record StubAdapter(String businessUnit) implements InvoiceAdapter {
+public record StubAdapter(String businessUnit) implements InvoiceAdapter {
 
   @Override
   public InvoiceDraft adapt(InvoiceRequested event) {

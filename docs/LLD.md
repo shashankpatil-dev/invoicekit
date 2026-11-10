@@ -13,7 +13,8 @@
 | `documentengine` | Complete for now, with the `subscriptions` template |
 | `document-engine` | Complete for now |
 | `numbering` | Complete and load tested. See [Numbering Design](NUMBERING.md) |
-| `invoice`, `archive`, `adaption` | Not built yet |
+| `invoice` intake, `adaption/subscriptions` | Steps 1 to 3 built: schema, payload rules, intake transaction. Kafka intake is next. See [Intake Design](INTAKE.md) |
+| `archive`, other BU adapters | Not built yet |
 
 The document engine still needs the `international` template and a full-pipeline load test. See [Load Test Results](LOAD_TEST.md).
 
@@ -683,6 +684,8 @@ Engineering-owned settings live in `.properties` files, one file per topic. Valu
 | `resources/config/render.properties` | Typst renderer client |
 | `resources/config/jobs.properties` | Outbox and recovery cron |
 | `resources/config/notification.properties` | Mail server |
+| `resources/config/numbering.properties` | Counter lock and statement timeouts, utilisation warning |
+| `resources/config/intake.properties` | Reference data cache lifetime, payload size limit |
 | `document-engine/config/renderer.properties` | Renderer queue, timeouts and gunicorn |
 
 `application.yml` only imports these files and sets worker profiles. A new topic gets its own file. Renderer values can be overridden by environment variable, so `render.max-waiting` becomes `RENDER_MAX_WAITING`. The renderer refuses to start unless `server.threads` exceeds `render.slots + render.max-waiting`.

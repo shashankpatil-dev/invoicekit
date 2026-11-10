@@ -1,4 +1,4 @@
-package com.shashank.invoicekit.numbering.flow;
+package com.shashank.invoicekit.support;
 
 import com.shashank.invoicekit.numbering.domain.entity.FinancialYear;
 import java.util.List;
@@ -9,9 +9,10 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 
 /**
  * Reads the numbering series back from the database and checks each one is whole. Run it after
- * every test that numbers invoices, as docs/NUMBERING.md section 14 asks.
+ * every test that numbers invoices, as docs/NUMBERING.md section 14 asks. Shared by the numbering
+ * and intake flow tests.
  */
-class SeriesReconciliation {
+public class SeriesReconciliation {
 
   /** The reconciliation query from the design: each row is a series with a gap or a repeat. */
   private static final String BROKEN_SERIES =
@@ -52,24 +53,25 @@ class SeriesReconciliation {
 
   private final JdbcClient jdbcClient;
 
-  SeriesReconciliation(JdbcClient jdbcClient) {
+  public SeriesReconciliation(JdbcClient jdbcClient) {
     this.jdbcClient = jdbcClient;
   }
 
   /** Every series that breaks a rule. Empty means no gaps, no repeats and matching counters. */
-  List<Map<String, Object>> problems() {
+  public List<Map<String, Object>> problems() {
     return Stream.of(BROKEN_SERIES, COUNTERS_OUT_OF_STEP)
         .flatMap(check -> jdbcClient.sql(check).query().listOfRows().stream())
         .toList();
   }
 
-  /** Each shard's counter in one business unit and year, as last number by shard letter. */
-  Map<String, Long> lastNumbersByShard(TestBusinessUnit businessUnit, FinancialYear financialYear) {
+  /** Each shard's counter for one entity, business unit and year, as last number by letter. */
+  public Map<String, Long> lastNumbersByShard(
+      String entityCode, String businessUnit, FinancialYear financialYear) {
     Map<String, Long> lastNumbers = new TreeMap<>();
     jdbcClient
         .sql(LAST_NUMBERS)
-        .param("entityCode", TestBusinessUnit.ENTITY_CODE)
-        .param("businessUnit", businessUnit.code())
+        .param("entityCode", entityCode)
+        .param("businessUnit", businessUnit)
         .param("financialYear", financialYear.label())
         .query(
             row -> {
@@ -78,9 +80,9 @@ class SeriesReconciliation {
     return lastNumbers;
   }
 
-  /** How many numbers one business unit issued in a year, across all its shards. */
-  long issuedCount(TestBusinessUnit businessUnit, FinancialYear financialYear) {
-    return lastNumbersByShard(businessUnit, financialYear).values().stream()
+  /** How many numbers one entity and business unit issued in a year, across all shards. */
+  public long issuedCount(String entityCode, String businessUnit, FinancialYear financialYear) {
+    return lastNumbersByShard(entityCode, businessUnit, financialYear).values().stream()
         .mapToLong(Long::longValue)
         .sum();
   }

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Design approved, not built |
+| Status | Steps 1 to 3 built, step 4 next |
 | Date | 2026-11-10 |
 | Related | [Invoice Superset](INVOICE_SUPERSET.md), [Numbering Design](NUMBERING.md), [LLD](LLD.md), [PRD](PRD.md) FR1-FR13 |
 
@@ -293,4 +293,5 @@ Each step ends with a passing build, its own short commits, and a push.
 - **Payload contract review:** the superset still needs a CA's review. Its export example shows an old number format, which step 2 corrects.
 - **Year rollover:** partitions must exist before each financial year. The test catches a missing one, but production also needs the next migration shipped in time.
 - **Retry forever:** a transient error that never clears holds its partition. Lag alerts must catch it.
+- **JSON written three times:** each payload is serialised once for the size check and once more for each of the invoice row and the render message. That's cheap at current volumes, and could become one pass if profiling shows it matters.
 - **Only one BU:** only `subscriptions` gets an adapter now. The contract is shaped by its needs, and the next adapters will test it.

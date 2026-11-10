@@ -31,6 +31,7 @@ dependencies {
   implementation("org.flywaydb:flyway-database-postgresql")
   implementation("com.google.cloud:google-cloud-storage:2.53.3")
   implementation("io.micrometer:micrometer-registry-prometheus")
+  implementation("com.github.ben-manes.caffeine:caffeine")
   runtimeOnly("org.postgresql:postgresql")
 
   testImplementation("org.springframework.boot:spring-boot-starter-test")

@@ -1,5 +1,6 @@
 package com.shashank.invoicekit.numbering.flow;
 
+import static com.shashank.invoicekit.numbering.flow.TestBusinessUnit.ENTITY_CODE;
 import static com.shashank.invoicekit.numbering.flow.TestBusinessUnit.FOUR_SHARDS;
 import static com.shashank.invoicekit.numbering.flow.TestBusinessUnit.ONE_SHARD;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -7,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.shashank.invoicekit.numbering.application.service.NumberingService;
 import com.shashank.invoicekit.numbering.domain.entity.FinancialYear;
+import com.shashank.invoicekit.support.SeriesReconciliation;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -62,10 +64,12 @@ class NumberingConcurrencyTest {
             .place(
                 THREADS, ORDERS_PER_THREAD, () -> DummyOrder.newOrder(FOUR_SHARDS, INVOICE_DATE));
 
-    Map<String, Long> lastNumbers = reconciliation.lastNumbersByShard(FOUR_SHARDS, FINANCIAL_YEAR);
+    Map<String, Long> lastNumbers =
+        reconciliation.lastNumbersByShard(ENTITY_CODE, FOUR_SHARDS.code(), FINANCIAL_YEAR);
     assertThat(numbers).hasSize(ORDERS).doesNotHaveDuplicates();
     assertThat(lastNumbers).containsOnlyKeys("A", "B", "C", "D");
-    assertThat(reconciliation.issuedCount(FOUR_SHARDS, FINANCIAL_YEAR)).isEqualTo(ORDERS);
+    assertThat(reconciliation.issuedCount(ENTITY_CODE, FOUR_SHARDS.code(), FINANCIAL_YEAR))
+        .isEqualTo(ORDERS);
     assertThat(reconciliation.problems()).isEmpty();
   }
 
@@ -78,7 +82,7 @@ class NumberingConcurrencyTest {
 
     assertThat(numbers).hasSize(DUPLICATE_SENDERS).containsOnly("SUBA260000000001");
     assertThat(dummyOrders.invoiceCount()).isEqualTo(1);
-    assertThat(reconciliation.lastNumbersByShard(ONE_SHARD, FINANCIAL_YEAR))
+    assertThat(reconciliation.lastNumbersByShard(ENTITY_CODE, ONE_SHARD.code(), FINANCIAL_YEAR))
         .isEqualTo(Map.of("A", 1L));
   }
 
@@ -108,6 +112,7 @@ class NumberingConcurrencyTest {
 
     assertThatThrownBy(() -> numberingService.assign(order.numberingRequest()))
         .isInstanceOf(IllegalTransactionStateException.class);
-    assertThat(reconciliation.lastNumbersByShard(ONE_SHARD, FINANCIAL_YEAR)).isEmpty();
+    assertThat(reconciliation.lastNumbersByShard(ENTITY_CODE, ONE_SHARD.code(), FINANCIAL_YEAR))
+        .isEmpty();
   }
 }

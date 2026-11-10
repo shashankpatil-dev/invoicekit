@@ -32,6 +32,10 @@ class ConfigurationFilesTest {
               .isEqualTo("5s");
           assertThat(environment.getProperty("invoicekit.numbering.utilisation-warning"))
               .isEqualTo("0.8");
+          assertThat(environment.getProperty("invoicekit.intake.reference-cache-ttl"))
+              .isEqualTo("5m");
+          assertThat(environment.getProperty("invoicekit.intake.max-payload-bytes"))
+              .isEqualTo("900000");
           assertThat(environment.getProperty("server.port")).isEqualTo("8081");
         });
   }
