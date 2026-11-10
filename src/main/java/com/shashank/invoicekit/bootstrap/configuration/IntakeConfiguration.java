@@ -17,6 +17,7 @@ import com.shashank.invoicekit.invoice.application.service.InvoiceContextFactory
 import com.shashank.invoicekit.invoice.application.service.InvoiceRequestValidator;
 import com.shashank.invoicekit.invoice.application.service.PayloadSizeLimit;
 import com.shashank.invoicekit.numbering.application.service.NumberingService;
+import com.shashank.invoicekit.outbox.application.port.outbound.TraceHeaders;
 import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -37,9 +38,11 @@ public class IntakeConfiguration {
         new PostgresReferenceData(jdbcClient, objectMapper), properties.referenceCacheTtl());
   }
 
+  /** Saves intake's rows, with the current trace on each outbox row. */
   @Bean
-  public InvoiceStore invoiceStore(JdbcClient jdbcClient, ObjectMapper objectMapper) {
-    return new PostgresInvoiceStore(jdbcClient, objectMapper);
+  public InvoiceStore invoiceStore(
+      JdbcClient jdbcClient, ObjectMapper objectMapper, TraceHeaders traceHeaders) {
+    return new PostgresInvoiceStore(jdbcClient, objectMapper, traceHeaders);
   }
 
   /**

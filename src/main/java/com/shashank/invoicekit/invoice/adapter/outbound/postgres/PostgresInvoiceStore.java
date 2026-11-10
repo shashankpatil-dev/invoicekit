@@ -7,6 +7,7 @@ import com.shashank.invoicekit.invoice.application.port.outbound.InvoiceStore;
 import com.shashank.invoicekit.invoice.application.service.TimeOrderedUuid;
 import com.shashank.invoicekit.invoice.domain.entity.InvoicePayload;
 import com.shashank.invoicekit.numbering.domain.entity.InvoiceNumber;
+import com.shashank.invoicekit.outbox.application.port.outbound.TraceHeaders;
 import java.time.LocalDate;
 import java.util.UUID;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -27,7 +28,8 @@ public class PostgresInvoiceStore implements InvoiceStore {
 
   /**
    * Writes the invoice, its audit row and its outbox row in one round trip. It runs right after the
-   * counter is locked, so the lock is held for this one statement and the commit.
+   * counter is locked, so the lock is held for this one statement and the commit. The outbox row
+   * keeps the current trace, so publishing and rendering continue it.
    */
   private static final String SAVE_NUMBERED =
       """
@@ -42,16 +44,21 @@ public class PostgresInvoiceStore implements InvoiceStore {
         INSERT INTO invoice_audit (invoice_id, to_status, actor)
         SELECT id, 'NUMBERED', 'intake' FROM saved
       )
-      INSERT INTO outbox (id, invoice_id, topic, message_key, body)
-      SELECT :outboxId, id, 'invoice.render', id::text, CAST(:renderMessage AS jsonb) FROM saved
+      INSERT INTO outbox (id, invoice_id, topic, message_key, body, headers)
+      SELECT :outboxId, id, 'invoice.render', id::text, CAST(:renderMessage AS jsonb),
+             CAST(:traceHeaders AS jsonb)
+      FROM saved
       """;
 
   private final JdbcClient jdbcClient;
   private final ObjectMapper objectMapper;
+  private final TraceHeaders traceHeaders;
 
-  public PostgresInvoiceStore(JdbcClient jdbcClient, ObjectMapper objectMapper) {
+  public PostgresInvoiceStore(
+      JdbcClient jdbcClient, ObjectMapper objectMapper, TraceHeaders traceHeaders) {
     this.jdbcClient = jdbcClient;
     this.objectMapper = objectMapper;
+    this.traceHeaders = traceHeaders;
   }
 
   @Override
@@ -84,6 +91,7 @@ public class PostgresInvoiceStore implements InvoiceStore {
         .param("payload", toJson(invoice))
         .param("outboxId", TimeOrderedUuid.next())
         .param("renderMessage", toJson(RenderMessage.of(invoice)))
+        .param("traceHeaders", toJson(traceHeaders.current()))
         .update();
   }
 
