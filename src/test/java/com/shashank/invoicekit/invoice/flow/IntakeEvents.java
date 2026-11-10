@@ -38,10 +38,17 @@ final class IntakeEvents {
   static InvoiceRequested newEvent(Consumer<ObjectNode> change) {
     return IntakeFixtures.domesticEvent(
         event -> {
-          event.put("entityCode", ENTITY_CODE);
-          event.put("sourceEventId", "intake-" + UUID.randomUUID());
+          fromTestEntity(event, "intake-" + UUID.randomUUID());
           change.accept(event);
         });
+  }
+
+  /** The example event as the JSON text a BU sends, on a given event ID and with one change. */
+  static String json(String sourceEventId, Consumer<ObjectNode> change) {
+    ObjectNode event = (ObjectNode) IntakeFixtures.tree(IntakeFixtures.DOMESTIC_EVENT);
+    fromTestEntity(event, sourceEventId);
+    change.accept(event);
+    return event.toString();
   }
 
   /** The example event on a given event ID, so sending it twice is a redelivery. */
@@ -52,5 +59,10 @@ final class IntakeEvents {
   /** The invoice number at a position in the test entity's only series, such as 1. */
   static String number(long sequence) {
     return NUMBER_FORMAT.format(ONLY_SHARD, FINANCIAL_YEAR, sequence);
+  }
+
+  private static void fromTestEntity(ObjectNode event, String sourceEventId) {
+    event.put("entityCode", ENTITY_CODE);
+    event.put("sourceEventId", sourceEventId);
   }
 }
