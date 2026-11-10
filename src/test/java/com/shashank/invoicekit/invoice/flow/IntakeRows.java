@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.UUID;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
-/** Reads back the rows intake writes, and clears them between tests. */
+/** Reads back the rows intake and rendering write, and clears them between tests. */
 class IntakeRows {
 
   /** Every table intake writes. Only intake flow tests use this database, so every row goes. */
@@ -14,7 +14,7 @@ class IntakeRows {
   private static final String INVOICE =
       """
       SELECT tableoid::regclass::text AS partition, id, entity_code, invoice_number, shard,
-             sequence_no, status, payload::text AS payload
+             sequence_no, status, uri, checksum, payload::text AS payload
       FROM invoice
       WHERE bu = :businessUnit AND source_event_id = :sourceEventId
       """;
@@ -103,6 +103,8 @@ class IntakeRows {
    * One {@code invoice} row.
    *
    * @param partition the yearly partition holding it, such as {@code invoice_2026_27}
+   * @param uri where its PDF is stored, null until it is rendered
+   * @param checksum its stored PDF's checksum, null until it is rendered
    * @param payload the saved payload as JSON text
    */
   record SavedInvoice(
@@ -113,6 +115,8 @@ class IntakeRows {
       String shard,
       long sequenceNo,
       String status,
+      String uri,
+      String checksum,
       String payload) {}
 
   record ClaimedEvent(UUID invoiceId, String financialYear) {}
